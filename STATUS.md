@@ -1,24 +1,30 @@
 # STATUS
 
 ## Current milestone
-`v0.0.1-bootstrap`: repo skeleton, spec and agent rules in place. No code yet.
+Phase 0 (research) complete in draft; waiting on three small items before the Phase 0.5 spike can start.
 
 ## Completed
-- Repository skeleton created (`crates/`, `web/`, `tests/`, `tools/fixtures/`, `docs/`).
-- `docs/SPEC.md` written and amended (fixtures carve-out, spike ordering and time box, localhost Origin/Host checks, dev VRAM note, task sizing).
-- `CLAUDE.md` agent rules in place.
+- Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
+- Strata verified at `http://127.0.0.1:8080` (health, models, Anthropic-style `/v1/messages`); `tools/dev/claude-strata.ps1` launches Claude Code against it. See `docs/STRATA.md`.
+- Phase 0 docs: `RESEARCH.md`, `MODEL_SUPPORT.md`, `ARCHITECTURE.md`, `TESTING.md`, `IMPLEMENTATION_PLAN.md`.
+
+## Key findings
+- Leading Backend #1: FLUX.2-klein-base-4B (Apache 2.0, official BFL training guidance, fits a 4090). Alternate: Z-Image (6B, Apache 2.0).
+- Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- Dev tooling: `tools/dev/claude-strata.ps1` launches Claude Code against local Strata (verified working 2026-10-27). `docs/STRATA.md` records the verified API surface.
-- Phase 0 research: partial `docs/RESEARCH.md` committed (verified findings only, open questions listed). Next: official repos and model cards for Burn/Candle/cudarc and Backend #1 candidates.
+- Nothing running.
 
 ## Known issues
-- `docs/IMPLEMENTATION_PLAN.md` does not exist yet; the Phase 0.5 time-box budget is undefined until Phase 0 writes it.
-- Remote is https://github.com/erikerikerik/foundry-trainer (public). Tag `v0.0.1-bootstrap` exists locally but pushing tags from the cloud workspace failed twice (connection dropped); push it from the desktop.
+- Windows toolchain versions are not recorded yet (`docs/ARCHITECTURE.md`).
+- LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3).
+- The Phase 0.5 time box in `docs/IMPLEMENTATION_PLAN.md` (10 working days, 5 failed attempts per problem) is a proposed default awaiting owner confirmation.
+- Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Phase 0 research (needs live web): Rust ML ecosystem, current trainable image models, LoRA conventions, Strata API. Output to `docs/RESEARCH.md`, `ARCHITECTURE.md`, `MODEL_SUPPORT.md`, `IMPLEMENTATION_PLAN.md`, `STRATA.md`, `TESTING.md`.
-2. Phase 0.5 numerical feasibility spike (hard gate).
+1. Owner: confirm or change the spike budget; run the toolchain version commands on the desktop.
+2. Read a real klein LoRA header and the diffusers FLUX.2 pipeline source; record results.
+3. Phase 0.5 spike, items 0.5.1 to 0.5.10.
 
 ## Last known working commit
-Bootstrap commit (see `git log`).
+See `git log` on `main`.
