@@ -1,0 +1,30 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Secrets and local config
+.env
+.env.*
+*.token
+secrets/
+foundry.local.json
+
+# Models, projects and large artifacts (kept outside the repo)
+Models/
+Projects/
+*.safetensors
+*.ckpt
+*.gguf
+*.pt
+*.bin
+
+# Fixtures: small committed data only; scratch output stays local
+tools/fixtures/out/
+tools/fixtures/.venv/
+__pycache__/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
