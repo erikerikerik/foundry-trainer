@@ -9,6 +9,7 @@
 - `CLAUDE.md` agent rules in place.
 
 ## In progress
+- Dev tooling: `tools/dev/claude-strata.ps1` launches Claude Code against local Strata (verified working 2026-10-27). `docs/STRATA.md` records the verified API surface.
 - Phase 0 research: partial `docs/RESEARCH.md` committed (verified findings only, open questions listed). Next: official repos and model cards for Burn/Candle/cudarc and Backend #1 candidates.
 
 ## Known issues
