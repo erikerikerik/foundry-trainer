@@ -13,7 +13,7 @@
 
 ## Known issues
 - `docs/IMPLEMENTATION_PLAN.md` does not exist yet; the Phase 0.5 time-box budget is undefined until Phase 0 writes it.
-- Repo has no GitHub remote yet.
+- Remote is https://github.com/erikerikerik/foundry-trainer (public). Tag `v0.0.1-bootstrap` exists locally but pushing tags from the cloud workspace failed twice (connection dropped); push it from the desktop.
 
 ## Next actions
 1. Phase 0 research (needs live web): Rust ML ecosystem, current trainable image models, LoRA conventions, Strata API. Output to `docs/RESEARCH.md`, `ARCHITECTURE.md`, `MODEL_SUPPORT.md`, `IMPLEMENTATION_PLAN.md`, `STRATA.md`, `TESTING.md`.
