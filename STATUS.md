@@ -9,7 +9,7 @@
 - `CLAUDE.md` agent rules in place.
 
 ## In progress
-- Nothing.
+- Phase 0 research: partial `docs/RESEARCH.md` committed (verified findings only, open questions listed). Next: official repos and model cards for Burn/Candle/cudarc and Backend #1 candidates.
 
 ## Known issues
 - `docs/IMPLEMENTATION_PLAN.md` does not exist yet; the Phase 0.5 time-box budget is undefined until Phase 0 writes it.
