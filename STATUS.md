@@ -1,7 +1,7 @@
 # STATUS
 
 ## Current milestone
-Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance; 2026-10-28). Next: 0.5.5 full-block backward + LoRA gradients.
+Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor; 2026-10-28). Next: 0.5.6 AdamW steps.
 
 ## Completed
 - Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
@@ -13,13 +13,14 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - 0.5.2: CPU PyTorch installed with owner approval (torch 2.14.1+cpu); `tools/fixtures/gen_block.py` + fixtures (`block_fp32/bf16.safetensors`, `meta.json`, `PROVENANCE.md`) committed. Measured bf16-vs-fp32 noise floor is inside the initial `TESTING.md` thresholds.
 - 0.5.3 (path A): `crates/foundry-spike/src/bin/block_forward.rs` runs the fixture block pair in Candle 0.11 CUDA bf16 on the 4090; every recorded activation within tolerance (worst rel L2 6.2e-3, noise floor 1.64e-2). `candle_smoke.rs` proves the CUDA op set. Toolchain recipe for nvcc-under-Git-Bash in `docs/BUILD_LOG.md`.
 - 0.5.4 (path A): `crates/foundry-spike/src/bin/attn_backward.rs` — attention as a Candle `CustomOp3` with hand-written backward; gradients vs fixture `grad/attn/*`: cosine 1.000000, worst rel L2 1.4e-6. Fixtures extended to 110 tensors (`attn_in/*`, `grad/attn/*`); pre-existing tensors bit-identical. Details in `docs/BUILD_LOG.md`.
+- 0.5.5 (path A): `crates/foundry-spike/src/lib.rs` (shared block code + `AttnBwd`, attention now routed through the custom op) and `src/bin/block_backward.rs` — whole block pair as one Candle autograd graph with `Var` leaves for `inputs/img`, `inputs/txt` and all six LoRA factors; real `loss.backward()`. All 8 gradients pass (worst rel L2 8.9e-3, cos >= 0.99996 — inside the 1.2e-2 fixture gradient noise floor); forward replay of every activation also matches. Details in `docs/BUILD_LOG.md`.
 
 ## Key findings
 - Leading Backend #1: FLUX.2-klein-base-4B (Apache 2.0, official BFL training guidance, fits a 4090). Alternate: Z-Image (6B, Apache 2.0).
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- 0.5.5 (full-block backward including LoRA A/B gradients) — correctness test, so Strata may stay loaded (same reasoning as 0.5.1); the unload-before-GPU-run rule still binds 0.5.8/0.5.9 for the owner.
+- 0.5.6 (AdamW step on LoRA parameters, vs fixture `opt1/*` and `opt10/*`) — correctness test, so Strata may stay loaded (same reasoning as 0.5.1); the unload-before-GPU-run rule still binds 0.5.8/0.5.9 for the owner.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
@@ -28,7 +29,7 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Local agent: 0.5.5 full-block backward + LoRA A/B gradients (vs `grad/inputs/*`, `grad/*.lora_*`), then 0.5.6 AdamW, on `phase-0-5-spike`.
+1. Local agent: 0.5.6 AdamW on LoRA parameters (vs `opt1/*`, `opt10/*`), then 0.5.7 determinism + 1000-iteration stability, then 0.5.10 decision record + tag `v0.0.3-spike-pass`, on `phase-0-5-spike`.
 2. Cloud Claude: LoRA header and diffusers pipeline reading (Phase 0 leftovers); the fixture structure may need a pass once the real single-block wiring and RoPE axis dims are confirmed.
 3. Owner (later, when the spike reaches them): items 0.5.8/0.5.9 from a plain PowerShell window with Strata unloaded.
 

@@ -18,7 +18,7 @@ Inputs for all items: `docs/SPEC.md` section 22, `docs/ARCHITECTURE.md`, `docs/T
 - [x] 0.5.2 Fixture generator `tools/fixtures/gen_block.py` for the scaled-down klein-style block, fp32 and bf16, with noise-floor report. Accept: fixture files plus `PROVENANCE.md` committed.
 - [x] 0.5.3 Forward pass of the block on GPU (path A), bf16. Accept: activations within `TESTING.md` tolerances.
 - [x] 0.5.4 Attention backward as a custom op (bf16). Accept: gradient cosine >= 0.999 on attention inputs.
-- [ ] 0.5.5 Full-block backward including LoRA A/B gradients. Accept: LoRA gradients within tolerance.
+- [x] 0.5.5 Full-block backward including LoRA A/B gradients. Accept: LoRA gradients within tolerance.
 - [ ] 0.5.6 AdamW step on LoRA parameters. Accept: update within tolerance after 1 and 10 steps.
 - [ ] 0.5.7 Repeat/determinism and 1000-iteration stability run. Accept: bit-identical repeats, no drift in loss on fixed data.
 - [ ] 0.5.8 Memory teardown test with NVML. Accept: free VRAM back within 200 MB of baseline.
