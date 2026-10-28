@@ -16,13 +16,14 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - 0.5.5 (path A): `crates/foundry-spike/src/lib.rs` (shared block code + `AttnBwd`, attention now routed through the custom op) and `src/bin/block_backward.rs` — whole block pair as one Candle autograd graph with `Var` leaves for `inputs/img`, `inputs/txt` and all six LoRA factors; real `loss.backward()`. All 8 gradients pass (worst rel L2 8.9e-3, cos >= 0.99996 — inside the 1.2e-2 fixture gradient noise floor); forward replay of every activation also matches. Details in `docs/BUILD_LOG.md`.
 - 0.5.6 (path A): `crates/foundry-spike/src/bin/opt_step.rs` — 10-step AdamW training loop on the six LoRA `Var` parameters (fresh graph + `backward()` per step, hand-written bias-corrected AdamW, fp32 moments, `Var::set` for the in-place update). LoRA values after steps 1 and 10 match the fixture `opt1/*`/`opt10/*` (worst rel L2 1.18e-2, cos >= 0.99993 — inside the 1.64e-2 noise floor); loss falls monotonically 3.8932 -> 3.8818. Details in `docs/BUILD_LOG.md`.
 - 0.5.7 (path A): `crates/foundry-spike/src/bin/stability.rs` — two independent 10-step bf16 runs are bit-identical (per-step losses + all six final LoRA tensors); 1000-step bf16 run on fixed data stays finite and drift-free (loss 3.8932 -> 2.1219, 100-step window means strictly decreasing, longest rise run 3). The fp32 control (same loop, fp32 fixture) rises on isolated steps *more* than bf16 (max 6.2e-3 vs 1.6e-3), proving step rises are Adam overshoot at lr 1e-3 rather than a precision artifact; the drift gate is structural (window means, rise-run and rise-size caps), applied to both. AdamW extracted to `lib::adamw_step`. Details in `docs/BUILD_LOG.md`.
+- 0.5.8/0.5.9 measurement binaries written (NOT yet run — they must run with Strata unloaded): `src/bin/mem_teardown.rs` (NVML baseline before any CUDA context, 20-step bf16 fixture training burst, drop device + tensors, verify free VRAM returns within 200 MB; prints per-process list with the WDDM caveat) and `src/bin/throughput.rs` (random-weight 5+20 block stack at real klein dims — 3072 hidden, 24x128 heads — 1024 and 4096 image tokens, 2 warmup + 5 timed AdamW steps, ms/step + NVML-sampled peak VRAM, clean OUT-OF-MEMORY report per config). `nvml-wrapper` 0.13.0 added; licenses of all spike deps recorded in `THIRD_PARTY_NOTICES.md`.
 
 ## Key findings
 - Leading Backend #1: FLUX.2-klein-base-4B (Apache 2.0, official BFL training guidance, fits a 4090). Alternate: Z-Image (6B, Apache 2.0).
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- Nothing for the local agent. 0.5.8/0.5.9 are owner-run GPU measurements: they require Strata unloaded (the local agent runs on Strata), so they stay pending — see `docs/KICKOFF.md`.
+- Nothing for the local agent. The 0.5.8/0.5.9 binaries are written and committed; running them is owner work with Strata unloaded (the local agent runs on Strata) — see `docs/KICKOFF.md`.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
@@ -31,7 +32,9 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Owner: items 0.5.8/0.5.9 from a plain PowerShell window with Strata unloaded; record results in `BUILD_LOG.md` and tick the plan.
+1. Owner: items 0.5.8/0.5.9 — unload Strata, then in Git Bash from the repo root:
+   `. tools/dev/vcvars-env.sh && cargo run -p foundry-spike --bin mem_teardown --release`
+   and `cargo run -p foundry-spike --bin throughput --release`; record outputs in `BUILD_LOG.md` and tick the plan.
 2. Cloud Claude: LoRA header and diffusers pipeline reading (Phase 0 leftovers); the fixture structure may need a pass once the real single-block wiring and RoPE axis dims are confirmed.
 3. After 0.5.8/0.5.9 are recorded: Phase 1 item 1.1 (workspace skeleton) may start.
 

@@ -16,3 +16,4 @@ candle-core = { version = "0.11", features = ["cuda"] }
 # cuda feature - candle-core's cuda feature does not turn them on; without it those ops
 # error with "no cuda implementation".
 candle-nn = { version = "0.11", features = ["cuda"] }
+nvml-wrapper = "0.13.0"
