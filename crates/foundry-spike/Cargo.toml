@@ -6,6 +6,13 @@ description = "Phase 0.5 numerical feasibility spike (temporary; not part of the
 publish = false
 
 [dependencies]
-# Loads the CUDA driver and NVRTC at run time, so it builds without the CUDA toolkit installed.
-# cuda-13040 matches the installed toolkit (13.4) on the dev machine.
-cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-13040"] }
+# Direct cudarc use (0.5.1 NVRTC spike). Features must match candle-core's cudarc request
+# (dynamic-linking + cuda-version-from-build-system): cargo unifies them, and cudarc's
+# build script panics on a dynamic-loading/dynamic-linking or two-version mix.
+cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-linking"] }
+# Spike path A (ARCHITECTURE.md): Candle tensors/autograd for the block forward.
+candle-core = { version = "0.11", features = ["cuda"] }
+# candle-nn's CUDA fast paths (layer-norm, softmax CustomOps) are gated on candle-nn's OWN
+# cuda feature - candle-core's cuda feature does not turn them on; without it those ops
+# error with "no cuda implementation".
+candle-nn = { version = "0.11", features = ["cuda"] }
