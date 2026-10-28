@@ -1,7 +1,7 @@
 # STATUS
 
 ## Current milestone
-Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor), 0.5.6 **PASSED** (10 AdamW steps on LoRA params; worst rel L2 1.18e-2 vs `opt1/*`/`opt10/*`, below the 1.64e-2 noise floor; loss falls monotonically; 2026-10-28). Next: 0.5.7 determinism + stability.
+Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor), 0.5.6 **PASSED** (10 AdamW steps on LoRA params; worst rel L2 1.18e-2 vs `opt1/*`/`opt10/*`, below the 1.64e-2 noise floor), 0.5.7 **PASSED** (bit-identical repeated runs; 1000-step bf16 stability: loss 3.89 -> 2.12, all finite, window means strictly decreasing — no drift; fp32 control shows step rises are Adam overshoot, not precision noise; 2026-10-28). All numerical spike items pass on path A. Next: 0.5.10 decision record + tag; 0.5.8/0.5.9 owner-run.
 
 ## Completed
 - Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
@@ -15,13 +15,14 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - 0.5.4 (path A): `crates/foundry-spike/src/bin/attn_backward.rs` — attention as a Candle `CustomOp3` with hand-written backward; gradients vs fixture `grad/attn/*`: cosine 1.000000, worst rel L2 1.4e-6. Fixtures extended to 110 tensors (`attn_in/*`, `grad/attn/*`); pre-existing tensors bit-identical. Details in `docs/BUILD_LOG.md`.
 - 0.5.5 (path A): `crates/foundry-spike/src/lib.rs` (shared block code + `AttnBwd`, attention now routed through the custom op) and `src/bin/block_backward.rs` — whole block pair as one Candle autograd graph with `Var` leaves for `inputs/img`, `inputs/txt` and all six LoRA factors; real `loss.backward()`. All 8 gradients pass (worst rel L2 8.9e-3, cos >= 0.99996 — inside the 1.2e-2 fixture gradient noise floor); forward replay of every activation also matches. Details in `docs/BUILD_LOG.md`.
 - 0.5.6 (path A): `crates/foundry-spike/src/bin/opt_step.rs` — 10-step AdamW training loop on the six LoRA `Var` parameters (fresh graph + `backward()` per step, hand-written bias-corrected AdamW, fp32 moments, `Var::set` for the in-place update). LoRA values after steps 1 and 10 match the fixture `opt1/*`/`opt10/*` (worst rel L2 1.18e-2, cos >= 0.99993 — inside the 1.64e-2 noise floor); loss falls monotonically 3.8932 -> 3.8818. Details in `docs/BUILD_LOG.md`.
+- 0.5.7 (path A): `crates/foundry-spike/src/bin/stability.rs` — two independent 10-step bf16 runs are bit-identical (per-step losses + all six final LoRA tensors); 1000-step bf16 run on fixed data stays finite and drift-free (loss 3.8932 -> 2.1219, 100-step window means strictly decreasing, longest rise run 3). The fp32 control (same loop, fp32 fixture) rises on isolated steps *more* than bf16 (max 6.2e-3 vs 1.6e-3), proving step rises are Adam overshoot at lr 1e-3 rather than a precision artifact; the drift gate is structural (window means, rise-run and rise-size caps), applied to both. AdamW extracted to `lib::adamw_step`. Details in `docs/BUILD_LOG.md`.
 
 ## Key findings
 - Leading Backend #1: FLUX.2-klein-base-4B (Apache 2.0, official BFL training guidance, fits a 4090). Alternate: Z-Image (6B, Apache 2.0).
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- 0.5.7 (determinism: bit-identical repeats; 1000-iteration stability on fixed data) — correctness test, so Strata may stay loaded (same reasoning as 0.5.1); the unload-before-GPU-run rule still binds 0.5.8/0.5.9 for the owner.
+- 0.5.10 decision record (local agent, next commit). 0.5.8/0.5.9 are owner-run GPU measurements: they require Strata unloaded (the local agent runs on Strata), so they stay pending — see `docs/KICKOFF.md`.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
@@ -30,7 +31,7 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Local agent: 0.5.7 determinism + 1000-iteration stability, then 0.5.10 decision record + tag `v0.0.3-spike-pass`, on `phase-0-5-spike`.
+1. Local agent: 0.5.10 decision record (path A PASS, confirm Backend #1, note 0.5.8/0.5.9 pending) + tag `v0.0.3-spike-pass`, on `phase-0-5-spike`.
 2. Cloud Claude: LoRA header and diffusers pipeline reading (Phase 0 leftovers); the fixture structure may need a pass once the real single-block wiring and RoPE axis dims are confirmed.
 3. Owner (later, when the spike reaches them): items 0.5.8/0.5.9 from a plain PowerShell window with Strata unloaded.
 

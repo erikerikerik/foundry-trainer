@@ -9,7 +9,7 @@
 
 use candle_core::{
     backend::BackendStorage, op::BackpropOp, CpuStorage, CudaStorage, CustomOp3, DType, Device,
-    Layout, Result, Shape, Storage, Tensor, D,
+    Layout, Result, Shape, Storage, Tensor, Var, D,
 };
 use std::collections::HashMap;
 
@@ -71,6 +71,14 @@ pub fn layer_norm_mod(x: &Tensor, shift: &Tensor, scale: &Tensor, eps: f32) -> R
 }
 
 pub fn rope_tables(positions: &[[f32; 4]], device: &Device) -> Result<RopeTables> {
+    rope_tables_dtype(positions, device, DType::BF16)
+}
+
+pub fn rope_tables_dtype(
+    positions: &[[f32; 4]],
+    device: &Device,
+    dtype: DType,
+) -> Result<RopeTables> {
     // fp32 tables, cast to compute dtype (the reference casts before use)
     let mut cos = Vec::with_capacity(positions.len() * HEAD_DIM);
     let mut sin = Vec::with_capacity(positions.len() * HEAD_DIM);
@@ -91,8 +99,8 @@ pub fn rope_tables(positions: &[[f32; 4]], device: &Device) -> Result<RopeTables
         }
     }
     let shape = (positions.len(), HEAD_DIM);
-    let cos = Tensor::from_vec(cos, shape, device)?.to_dtype(DType::BF16)?;
-    let sin = Tensor::from_vec(sin, shape, device)?.to_dtype(DType::BF16)?;
+    let cos = Tensor::from_vec(cos, shape, device)?.to_dtype(dtype)?;
+    let sin = Tensor::from_vec(sin, shape, device)?.to_dtype(dtype)?;
     Ok(RopeTables { cos, sin })
 }
 
@@ -128,8 +136,12 @@ fn attn_fwd(q: &Tensor, k: &Tensor, v: &Tensor) -> Result<Tensor> {
     let kt = k.contiguous()?.transpose(0, 1)?;
     let vt = v.contiguous()?.transpose(0, 1)?;
     let scale = 1.0 / (HEAD_DIM as f64).sqrt();
+    // .contiguous() after the cast: in bf16 to_dtype materializes the view,
+    // in fp32 it is a no-op and CUDA matmul would reject the batch-transposed
+    // strides
     let scores = qt
         .to_dtype(DType::F32)?
+        .contiguous()?
         .matmul(&kt.to_dtype(DType::F32)?.transpose(1, 2)?.contiguous()?)?
         .affine(scale, 0.0)?;
     let probs = candle_nn::ops::softmax(&scores, 2)?.to_dtype(q.dtype())?;
@@ -437,6 +449,54 @@ pub fn mse(a: &Tensor, b: &Tensor) -> Result<Tensor> {
         .to_dtype(DType::F32)?
         .broadcast_sub(&b.to_dtype(DType::F32)?)?;
     d.sqr()?.mean_all()
+}
+
+/// AdamW hyperparameters (weight decay fixed at 0 for the spike).
+#[derive(Clone, Copy)]
+pub struct AdamW {
+    pub lr: f64,
+    pub beta1: f64,
+    pub beta2: f64,
+    pub eps: f64,
+}
+
+/// One bias-corrected AdamW update (weight decay 0), matching PyTorch's AdamW
+/// as used by the fixture generator: step_size = lr/(1-b1^t),
+/// denom = sqrt(v)/(sqrt(1-b2^t)) + eps. Moments are fp32 (the production
+/// choice); the parameter is updated in place in its own dtype via `Var::set`.
+pub fn adamw_step(
+    var: &Var,
+    grad: &Tensor,
+    m: &mut Tensor,
+    v: &mut Tensor,
+    step: usize,
+    opt: &AdamW,
+) -> Result<()> {
+    let AdamW {
+        lr,
+        beta1,
+        beta2,
+        eps,
+    } = *opt;
+    let g = grad.to_dtype(DType::F32)?;
+    let mnew = m.affine(beta1, 0.0)?.add(&g.affine(1.0 - beta1, 0.0)?)?;
+    let vnew = v
+        .affine(beta2, 0.0)?
+        .add(&g.sqr()?.affine(1.0 - beta2, 0.0)?)?;
+    let bc1 = 1.0 - beta1.powi(step as i32);
+    let bc2 = 1.0 - beta2.powi(step as i32);
+    let mhat = mnew.affine(1.0 / bc1, 0.0)?;
+    let denom = vnew.affine(1.0 / bc2, 0.0)?.sqrt()?.affine(1.0, eps)?;
+    let delta = mhat.broadcast_div(&denom)?.affine(lr, 0.0)?;
+    let pnew = var
+        .as_tensor()
+        .to_dtype(DType::F32)?
+        .broadcast_sub(&delta)?
+        .to_dtype(var.as_tensor().dtype())?;
+    var.set(&pnew)?;
+    *m = mnew;
+    *v = vnew;
+    Ok(())
 }
 
 /// cos >= COS_MIN and rel L2 <= REL_L2_MAX, computed in f64 over f32 values.
