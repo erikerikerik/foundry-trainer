@@ -2,7 +2,7 @@
 
 Format follows SPEC section 26. Sources and open questions are in `RESEARCH.md`.
 
-## Backend #1 (leading candidate, pending Phase 0.5)
+## Backend #1 (confirmed by the Phase 0.5 spike, 2026-10-28; see `BUILD_LOG.md` decision record)
 
 ```text
 Model:            FLUX.2-klein-base-4B (undistilled base)
@@ -14,7 +14,8 @@ Source:           https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B
 Precision:        BF16 weights
 Estimated VRAM:   ~13 GB for inference (model card); LoRA training fits 24 GB (HF blog, 4090, ~60 min / 1800 steps)
 Adapter types:    LoRA (target modules and rank: open)
-Status:           researching
+Status:           confirmed as Backend #1 (numerical spike passed on path A, tag
+                  `v0.0.3-spike-pass`); LoRA header conventions still open (needs web)
 Notes:            Train the Base checkpoint; the distilled 4-step checkpoint is for inference.
                   Foundry plan: cache text embeddings and latents so the text encoder and VAE
                   are not resident during training.

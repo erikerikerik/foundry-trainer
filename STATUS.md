@@ -1,7 +1,7 @@
 # STATUS
 
 ## Current milestone
-Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor), 0.5.6 **PASSED** (10 AdamW steps on LoRA params; worst rel L2 1.18e-2 vs `opt1/*`/`opt10/*`, below the 1.64e-2 noise floor), 0.5.7 **PASSED** (bit-identical repeated runs; 1000-step bf16 stability: loss 3.89 -> 2.12, all finite, window means strictly decreasing — no drift; fp32 control shows step rises are Adam overshoot, not precision noise; 2026-10-28). All numerical spike items pass on path A. Next: 0.5.10 decision record + tag; 0.5.8/0.5.9 owner-run.
+Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor), 0.5.6 **PASSED** (10 AdamW steps on LoRA params; worst rel L2 1.18e-2 vs `opt1/*`/`opt10/*`, below the 1.64e-2 noise floor), 0.5.7 **PASSED** (bit-identical repeated runs; 1000-step bf16 stability: loss 3.89 -> 2.12, all finite, window means strictly decreasing — no drift; fp32 control shows step rises are Adam overshoot, not precision noise; 2026-10-28). 0.5.10 **decision recorded: PASS on path A**, Backend #1 confirmed as FLUX.2-klein-base-4B, tagged `v0.0.3-spike-pass` (2026-10-28, day 2 of the 10-day budget). Remaining in Phase 0.5: 0.5.8/0.5.9, owner-run measurements with Strata unloaded. Phase 1 must not start until those are recorded.
 
 ## Completed
 - Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
@@ -22,7 +22,7 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- 0.5.10 decision record (local agent, next commit). 0.5.8/0.5.9 are owner-run GPU measurements: they require Strata unloaded (the local agent runs on Strata), so they stay pending — see `docs/KICKOFF.md`.
+- Nothing for the local agent. 0.5.8/0.5.9 are owner-run GPU measurements: they require Strata unloaded (the local agent runs on Strata), so they stay pending — see `docs/KICKOFF.md`.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
@@ -31,9 +31,9 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Local agent: 0.5.10 decision record (path A PASS, confirm Backend #1, note 0.5.8/0.5.9 pending) + tag `v0.0.3-spike-pass`, on `phase-0-5-spike`.
+1. Owner: items 0.5.8/0.5.9 from a plain PowerShell window with Strata unloaded; record results in `BUILD_LOG.md` and tick the plan.
 2. Cloud Claude: LoRA header and diffusers pipeline reading (Phase 0 leftovers); the fixture structure may need a pass once the real single-block wiring and RoPE axis dims are confirmed.
-3. Owner (later, when the spike reaches them): items 0.5.8/0.5.9 from a plain PowerShell window with Strata unloaded.
+3. After 0.5.8/0.5.9 are recorded: Phase 1 item 1.1 (workspace skeleton) may start.
 
 ## Last known working commit
 See `git log` on `main`.
