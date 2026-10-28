@@ -69,8 +69,23 @@ Researched 2026-10-27. Each finding below was read from the linked page. Items m
 - [Krea 2](https://www.krea.ai/krea-2-open-source): open weights on Hugging Face (`krea/Krea-2-Raw`), positioned as the LoRA training base; size, architecture and license terms not on the page.
 - Larger FLUX and Qwen-Image models remain Backend #2 and #3 per SPEC section 25; not researched yet.
 
-## 3. Not yet researched
-- LoRA tensor naming, alpha and scale conventions for FLUX.2 klein (SPEC section 28). Plan: read the header of a real klein LoRA `.safetensors`.
+## 3. FLUX.2 klein training recipe (diffusers sources, read 2026-10-28)
+
+Read through a fetch tool that summarizes pages, from the diffusers `main` branch: [`pipeline_flux2_klein.py`](https://raw.githubusercontent.com/huggingface/diffusers/main/src/diffusers/pipelines/flux2/pipeline_flux2_klein.py) and [`train_dreambooth_lora_flux2_klein.py`](https://raw.githubusercontent.com/huggingface/diffusers/main/examples/dreambooth/train_dreambooth_lora_flux2_klein.py). Figures below are as reported by that summary; re-read the source files directly before they become test fixtures.
+
+- **Text encoder:** Qwen3ForCausalLM, prompt wrapped as one user chat message (generation prompt on, thinking off), `max_sequence_length` 512, hidden states from three layers stacked so the embedding width is 3 x 2560 = 7680 (confirms the earlier inference).
+  - **Discrepancy to resolve:** the pipeline default layers are `(9, 18, 27)`, but the training script default `--text_encoder_out_layers` is `[10, 20, 30]`. Which one a trained LoRA expects is **Open**; a trainer must expose it and default to the training script's value, since that is what produces LoRAs.
+- **Latents:** VAE `mode()` (no sampling), patchify 2x2 into channels (32 -> 128), then standardize with `vae.bn` running stats: `(x - mean) / sqrt(var + batch_norm_eps)`; pixels scaled with mean 0.5, std 0.5. Cache normalized latents.
+- **Position ids (4 axes: T, H, W, L):** text ids `[0, 0, 0, l]`; image latent ids `[0, h, w, 0]`; reference images use T = 10 + 10 i. **Gap in the spike fixture:** the spike puts image H/W on axes 0/1 and text index on axis 0. Throughput-neutral, but Phase 4 inference must use the real axis assignment.
+- **Noising and loss (training script):** `noisy = (1 - sigma) * x + sigma * noise`; target = `noise - x`; per-sample mean of `weighting * (pred - target)^2`, weighting uniform by default; transformer receives `timesteps / 1000`.
+- **Timestep sampling:** `weighting_scheme` default `none` (choices `sigma_sqrt`, `logit_normal`, `mode`, `cosmap`); `logit_mean` 0.0, `logit_std` 1.0, `mode_scale` 1.29; indices from `u * num_train_timesteps`. Whether training applies the resolution-dependent shift is **Open** (inference uses `mu` from image sequence length with constants a1 8.73809524e-05, b1 1.89833333, a2 0.00016927, b2 0.45666666; CFG default 4.0 for base models).
+- **LoRA defaults:** rank 4, alpha 4 (alpha/rank 1.0), dropout 0, `init_lora_weights="gaussian"`; targets `to_k`, `to_q`, `to_v`, `to_out.0`, `to_qkv_mlp_proj`, plus single-block `attn.to_out` entries (indices 0-23 in the script; klein 4B has 20 single blocks). Base weights stay in the mixed-precision dtype; LoRA params upcast to fp32 only for fp16.
+- **Optimizer defaults:** AdamW, betas (0.9, 0.999), eps 1e-8, weight decay 1e-4, lr 1e-4, constant schedule with 500 warmup steps, grad clip 1.0. Differs from the spike's AdamW test (lr 1e-3, wd 0); that test only validated the update rule.
+- **Saving:** `Flux2KleinPipeline.save_lora_weights`, file `pytorch_lora_weights.safetensors`, keys prefixed `transformer.`.
+- **Real klein LoRAs exist** for checking naming, for example [MarioAlviano/lora-sofia-pollo-flux2-klein-4b](https://huggingface.co/MarioAlviano/lora-sofia-pollo-flux2-klein-4b) (8,374,984 bytes, base `black-forest-labs/FLUX.2-klein-4B`, card license "other"). The tensor names inside were **not** readable through the tools available; the file's JSON header must be read locally.
+
+## 4. Not yet researched
+- Exact LoRA tensor names and how alpha is stored in a real klein LoRA file (SPEC section 28): the recipe above gives the prefix and defaults, but the file header has not been read.
 - SafeTensors format details beyond the public spec.
 - FluxGym UX and Kohya methodology.
 - Strata lifecycle: partially verified, see `STRATA.md`.
