@@ -15,6 +15,7 @@ extern "C" __global__ void vec_add(const float* a, const float* b, float* out, i
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = CudaContext::new(0)?;
+    println!("device: {}", ctx.name()?);
     let stream = ctx.default_stream();
 
     let ptx = compile_ptx(KERNEL)?;
