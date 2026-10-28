@@ -23,7 +23,7 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- Nothing for the local agent. The 0.5.8/0.5.9 binaries are written and committed; running them is owner work with Strata unloaded (the local agent runs on Strata) — see `docs/KICKOFF.md`.
+- 0.5.8 FAIL (344 MB deficit, unconfirmed; reruns pending) and 0.5.9 OOM at 512px and 1024px with the naive full-graph backward: see `docs/BUILD_LOG.md` (2026-10-28 owner-run entry). Next: faithful dims + per-block gradient checkpointing, then re-measure. Original note: nothing else for the local agent. The 0.5.8/0.5.9 binaries are written and committed; running them is owner work with Strata unloaded (the local agent runs on Strata) — see `docs/KICKOFF.md`.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
