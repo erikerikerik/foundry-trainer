@@ -22,6 +22,8 @@ Projects/
 tools/fixtures/out/
 tools/fixtures/.venv/
 __pycache__/
+# ...but the committed spike fixtures are safetensors data (see PROVENANCE.md)
+!tools/fixtures/*.safetensors
 
 # OS / editor
 .DS_Store

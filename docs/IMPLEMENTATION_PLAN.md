@@ -15,7 +15,7 @@ Each item is sized for one focused session within a local model's context window
 Inputs for all items: `docs/SPEC.md` section 22, `docs/ARCHITECTURE.md`, `docs/TESTING.md`, `docs/MODEL_SUPPORT.md`. Before every GPU run, unload Strata and record NVML free VRAM.
 
 - [x] 0.5.1 Confirm CUDA builds on the dev machine: a hello-world kernel via the chosen crate compiles and runs on the 4090. Accept: prints device name and a correct vector add. Commit.
-- [ ] 0.5.2 Fixture generator `tools/fixtures/gen_block.py` for the scaled-down klein-style block, fp32 and bf16, with noise-floor report. Accept: fixture files plus `PROVENANCE.md` committed.
+- [x] 0.5.2 Fixture generator `tools/fixtures/gen_block.py` for the scaled-down klein-style block, fp32 and bf16, with noise-floor report. Accept: fixture files plus `PROVENANCE.md` committed.
 - [ ] 0.5.3 Forward pass of the block on GPU (path A), bf16. Accept: activations within `TESTING.md` tolerances.
 - [ ] 0.5.4 Attention backward as a custom op (bf16). Accept: gradient cosine >= 0.999 on attention inputs.
 - [ ] 0.5.5 Full-block backward including LoRA A/B gradients. Accept: LoRA gradients within tolerance.
