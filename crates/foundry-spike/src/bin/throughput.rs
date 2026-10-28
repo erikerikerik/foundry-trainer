@@ -145,7 +145,8 @@ fn add_linear(
         );
         w.insert(
             format!("weights/{name}.lora_b"),
-            Tensor::zeros((LORA_RANK, out_dim), DType::BF16, dev)?,
+            // (out, rank): the lib's `linear` multiplies by b.t().
+            Tensor::zeros((out_dim, LORA_RANK), DType::BF16, dev)?,
         );
     }
     Ok(out_dim * in_dim + out_dim)
