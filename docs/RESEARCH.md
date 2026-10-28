@@ -84,8 +84,21 @@ Read through a fetch tool that summarizes pages, from the diffusers `main` branc
 - **Saving:** `Flux2KleinPipeline.save_lora_weights`, file `pytorch_lora_weights.safetensors`, keys prefixed `transformer.`.
 - **Real klein LoRAs exist** for checking naming, for example [MarioAlviano/lora-sofia-pollo-flux2-klein-4b](https://huggingface.co/MarioAlviano/lora-sofia-pollo-flux2-klein-4b) (8,374,984 bytes, base `black-forest-labs/FLUX.2-klein-4B`, card license "other"). The tensor names inside were **not** readable through the tools available; the file's JSON header must be read locally.
 
+### 3.1 Real klein LoRA file layout (header read 2026-10-28)
+
+Read from the JSON header of `pytorch_lora_weights.safetensors` in [MarioAlviano/lora-sofia-pollo-flux2-klein-4b](https://huggingface.co/MarioAlviano/lora-sofia-pollo-flux2-klein-4b) (made with the diffusers klein trainer defaults; card license "other", so only names and shapes are recorded here, no weights). Header parsed locally: 120 tensors, 4,177,920 values, 8,355,840 bytes of bf16 data, matching the 8,374,984-byte file.
+
+- **Key format:** `transformer.<module path>.lora_A.weight` and `.lora_B.weight`. A is `[rank, in]`, B is `[out, rank]`. All BF16. Rank 4.
+- **Alpha is not a tensor.** The `__metadata__` block has `format: "pt"` and `lora_adapter_metadata`, a JSON string of the PEFT config with `transformer.r` 4, `transformer.lora_alpha` 4, `target_modules`, `init_lora_weights` "gaussian", `use_rslora` false, `use_dora` false, `peft_version` 0.18.1. Scale = alpha / rank = 1.0. Foundry should write the same metadata, and by default set alpha equal to rank so a loader that ignores the metadata still gets scale 1.0 (the loader behavior is **unverified**).
+- **Double-stream blocks** (`transformer_blocks.0` to `.4`, 5 blocks): only the image-stream projections are adapted: `attn.to_q`, `attn.to_k`, `attn.to_v`, `attn.to_out.0`, each `3072 -> 3072`. The text-stream (`add_*`) projections and feed-forwards are not adapted by default.
+- **Single-stream blocks** (`single_transformer_blocks.0` to `.19`, 20 blocks): two adapted modules each:
+  - `attn.to_qkv_mlp_proj`: A `[4, 3072]`, B `[27648, 4]`. The fused projection outputs 27648 = 3 x 3072 (Q, K, V) + 2 x 9216 (SwiGLU gate and up, mlp hidden 9216 = 3 x 3072).
+  - `attn.to_out`: A `[4, 12288]`, B `[3072, 4]`. Its input is 12288 = 3072 (attention output) + 9216 (activated MLP), concatenated.
+- This confirms `mlp_ratio` 3 with SwiGLU, and that the single block is **one fused in-projection (3072 -> 27648) and one fused out-projection (12288 -> 3072)**.
+- **Spike fidelity gap:** the throughput harness used separate `to_qkv` (3072 -> 9216), `to_out` (3072 -> 3072) and a 4x MLP, which is not this layout. The fixture block also needs checking against it (see `PROVENANCE.md`).
+
 ## 4. Not yet researched
-- Exact LoRA tensor names and how alpha is stored in a real klein LoRA file (SPEC section 28): the recipe above gives the prefix and defaults, but the file header has not been read.
+- Whether diffusers' LoRA loader reads alpha from the metadata or assumes alpha = rank (section 3.1); the text-layer question `(9, 18, 27)` vs `(10, 20, 30)`; whether training applies the resolution-dependent timestep shift.
 - SafeTensors format details beyond the public spec.
 - FluxGym UX and Kohya methodology.
 - Strata lifecycle: partially verified, see `STRATA.md`.
