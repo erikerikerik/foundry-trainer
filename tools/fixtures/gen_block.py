@@ -19,10 +19,12 @@ Reference semantics the Rust implementation must match:
 
 Outputs (written next to this script):
   block_fp32.safetensors, block_bf16.safetensors, meta.json
-Each file holds inputs, weights, intermediate activations, output, loss,
-gradients (frozen-path inputs and LoRA A/B) and the AdamW updates after 1 and
-10 steps. meta.json holds the config, the fp32-vs-bf16 noise-floor report and
-the determinism check result.
+Each file holds inputs, weights, intermediate activations (including the
+attention inputs/output under attn_in/), output, loss, gradients (frozen-path
+inputs, LoRA A/B, and per-attention dL/dq, dL/dk, dL/dv plus the upstream
+gradient into each attention output under grad/attn/) and the AdamW updates
+after 1 and 10 steps. meta.json holds the config, the fp32-vs-bf16 noise-floor
+report and the determinism check result.
 """
 
 import json
@@ -223,6 +225,9 @@ class DoubleBlock:
         k = torch.cat([k_t, k_i], dim=0)
         v = torch.cat([v_t, v_i], dim=0)
         attn = attention(q, k, v)
+        # attention inputs/output for the 0.5.4 isolated backward test
+        acts["attn_in/double.q"], acts["attn_in/double.k"], acts["attn_in/double.v"] = q, k, v
+        acts["attn_in/double.attn"] = attn
         n_t = txt.shape[0]
         a_t, a_i = attn[:n_t], attn[n_t:]
         acts["double.attn_img"] = a_i
@@ -270,7 +275,10 @@ class SingleBlock:
         q = apply_rope(rms_norm(q, self.q_norm, eps), cos, sin, axes)
         k = apply_rope(rms_norm(k, self.k_norm, eps), cos, sin, axes)
         acts["single.q"], acts["single.k"] = q, k
-        attn = attention(q, k, v).reshape(x.shape[0], -1)
+        attn3 = attention(q, k, v)
+        acts["attn_in/single.q"], acts["attn_in/single.k"], acts["attn_in/single.v"] = q, k, v
+        acts["attn_in/single.attn"] = attn3
+        attn = attn3.reshape(x.shape[0], -1)
         acts["single.attn"] = attn
 
         mlp = self.mlp_down(F.silu(self.mlp_gate(nh)) * self.mlp_up(nh))
@@ -354,7 +362,7 @@ def run(dtype: torch.Tensor.dtype, record_opt: bool):
 
     loss = F.mse_loss(final_img, target_img) + F.mse_loss(final_txt, target_txt)
     acts["loss"] = loss
-    loss.backward()
+    loss.backward(retain_graph=True)
 
     out: dict[str, torch.Tensor] = {}
     for name, t in acts.items():
@@ -363,6 +371,18 @@ def run(dtype: torch.Tensor.dtype, record_opt: bool):
         out[name] = t.detach().clone()
     out["grad/inputs/img"] = img_in.grad.detach().clone()
     out["grad/inputs/txt"] = txt_in.grad.detach().clone()
+    # 0.5.4 isolated attention-backward test: dL/dq, dL/dk, dL/dv plus the
+    # upstream gradient flowing into each attention output (the seed for a
+    # standalone custom-op backward check).
+    for tag in ("double", "single"):
+        qn, kn, vn, an = (acts[f"attn_in/{tag}.{n}"] for n in ("q", "k", "v", "attn"))
+        gq, gk, gv, ga = torch.autograd.grad(
+            loss, [qn, kn, vn, an], retain_graph=True
+        )
+        out[f"grad/attn/{tag}.q"] = gq.detach().clone()
+        out[f"grad/attn/{tag}.k"] = gk.detach().clone()
+        out[f"grad/attn/{tag}.v"] = gv.detach().clone()
+        out[f"grad/attn/{tag}.out"] = ga.detach().clone()
     lora_params = []
     for mod in (double, single):
         for m in _loras(mod):

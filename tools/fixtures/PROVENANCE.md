@@ -10,13 +10,17 @@ Dev-only reference data generated externally under CLAUDE.md rule 2. Nothing in
 - Python 3.12.10, torch 2.14.1+cpu, safetensors 0.8.0
 - Seed: 20261028 (`torch.use_deterministic_algorithms(True)`, 1 thread)
 - fp32 pipeline run twice: bit-identical (determinism PASS, recorded in `meta.json`)
+- 2026-10-28 second run: added `attn_in/*` and `grad/attn/*` tensors for spike
+  item 0.5.4 (isolated attention-backward test). No RNG draws changed, so all
+  previously recorded tensors are bit-identical (verified: unchanged noise-floor
+  entries in `meta.json`, and `block_forward.rs` still PASSes).
 
 ## Files
 
 | File | Contents |
 |---|---|
-| `block_fp32.safetensors` | 94 tensors, fp32: inputs, weights (incl. LoRA A/B), intermediate activations, output, loss, gradients (frozen-path inputs + LoRA A/B), LoRA values after 1 and 10 AdamW steps |
-| `block_bf16.safetensors` | same 94 tensors, bf16 run (weights cast from the same fp32 init) |
+| `block_fp32.safetensors` | 110 tensors, fp32: inputs, weights (incl. LoRA A/B), intermediate activations (incl. `attn_in/*`: each attention's q/k/v/attn graph tensors), output, loss, gradients (frozen-path inputs, LoRA A/B, and `grad/attn/*`: dL/dq, dL/dk, dL/dv plus the upstream gradient into each attention output), LoRA values after 1 and 10 AdamW steps |
+| `block_bf16.safetensors` | same 110 tensors, bf16 run (weights cast from the same fp32 init) |
 | `meta.json` | config, determinism result, fp32-vs-bf16 noise-floor report (rel L2 + cosine per tensor) |
 
 ## Structure (scaled-down FLUX.2-klein-style, per `docs/TESTING.md`)
@@ -42,10 +46,12 @@ betas (0.9,0.999), eps 1e-8, weight_decay 0.
 
 ## Noise floor (PyTorch bf16 vs PyTorch fp32, same inputs)
 
-Worst rel L2 over 37 compared tensors: 1.64e-2 (`opt10/double.img.to_q.lora_b`,
+Worst rel L2 over 53 compared tensors: 1.64e-2 (`opt10/double.img.to_q.lora_b`,
 cosine 0.999869). All tensors within the initial `TESTING.md` thresholds
 (rel L2 <= 2e-2, cosine >= 0.999), so the initial thresholds stand; the
-per-tensor floor is in `meta.json` for tighter bounds later.
+per-tensor floor is in `meta.json` for tighter bounds later. The attention
+gradients specifically: worst rel L2 1.12e-2, worst cosine 0.99994 — the
+0.5.4 acceptance (cosine >= 0.999, rel L2 <= 2e-2) sits above this floor.
 
 ## Known simplifications vs real klein
 
