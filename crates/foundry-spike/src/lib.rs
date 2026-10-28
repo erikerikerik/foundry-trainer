@@ -8,8 +8,8 @@
 //! artifacts; this lib is where the code evolves from.
 
 use candle_core::{
-    backend::BackendStorage, op::BackpropOp, CpuStorage, CudaStorage, CustomOp3, DType, Device,
-    Layout, Result, Shape, Storage, Tensor, Var, D,
+    backend::BackendStorage, backprop::GradStore, op::BackpropOp, CpuStorage, CudaStorage,
+    CustomOp3, DType, Device, Layout, Result, Shape, Storage, Tensor, Var, D,
 };
 use std::collections::HashMap;
 
@@ -497,6 +497,134 @@ pub fn adamw_step(
     *m = mnew;
     *v = vnew;
     Ok(())
+}
+
+// ----- per-block gradient checkpointing -------------------------------------
+
+/// One stage of a checkpointed forward/backward. The *same* closure runs
+/// twice: once during the forward pass (with the LoRA factors passed in as
+/// detached tensors, so no backprop node is recorded anywhere) and once again
+/// during backward (with them as live variable leaves, so the graph is real).
+/// `run` gets the weight map and the stage's inputs, and returns its outputs.
+pub type StageFn<'a> = Box<dyn Fn(&Weights, &[Tensor]) -> Result<Vec<Tensor>> + 'a>;
+
+pub struct Stage<'a> {
+    pub run: StageFn<'a>,
+}
+
+/// Forward and backward keeping only each stage's *inputs* alive.
+///
+/// Forward: every stage runs graph-free (LoRA factors detached — same storage,
+/// so still the current values), which means each stage's intermediates are
+/// freed the moment it returns; the only tensors retained are `stage_inputs`.
+/// Backward: stages are walked in reverse. A stage's saved inputs become
+/// variable leaves, its graph is rebuilt by the same `run` closure, and its
+/// upstream gradient is injected with the seed trick proven in item 0.5.4 —
+/// `sum(out_j * upstream_j)`, whose backward hands `upstream_j` to the graph
+/// unchanged. The stage's input gradients are then that stage's upstream
+/// gradient for the next (earlier) stage.
+///
+/// Returns `(loss, gradients for inputs, gradients for lora_vars)`. Every LoRA
+/// factor must be used by exactly one stage (per-block factors are disjoint,
+/// which is how the fixture and the klein stack are built): a stage's backward
+/// only yields gradients for leaves inside its own graph.
+pub fn checkpointed_backward(
+    base: &Weights,
+    stages: &[Stage<'_>],
+    inputs: &[Tensor],
+    seed: impl FnOnce(&[Tensor]) -> Result<Tensor>,
+    lora_vars: &[(String, Var)],
+) -> Result<(f32, Vec<Tensor>, GradStore)> {
+    if stages.is_empty() {
+        return Err(candle_core::Error::Msg(
+            "checkpointed_backward: no stages".into(),
+        ));
+    }
+    let mut w_det = base.clone();
+    for (key, var) in lora_vars {
+        w_det.insert(key.clone(), var.as_detached_tensor());
+    }
+    let mut stage_inputs: Vec<Vec<Tensor>> = Vec::with_capacity(stages.len());
+    let mut cur = inputs.to_vec();
+    for st in stages {
+        stage_inputs.push(cur.clone());
+        cur = (st.run)(&w_det, &cur)
+            .map_err(|e| candle_core::Error::Msg(format!("died in forward: {e:?}")))?;
+    }
+
+    // The final outputs become variable leaves: backward through the seed loss
+    // is what produces their upstream gradients.
+    let out_vars: Vec<Var> = cur.iter().map(Var::from_tensor).collect::<Result<_>>()?;
+    let out_leafs: Vec<Tensor> = out_vars.iter().map(|v| v.as_tensor().clone()).collect();
+    let loss = seed(&out_leafs)?;
+    let loss_val = loss.to_vec0::<f32>()?;
+    let out_grads = loss
+        .backward()
+        .map_err(|e| candle_core::Error::Msg(format!("died in backward (loss): {e:?}")))?;
+    let mut upstream: Vec<Tensor> = Vec::with_capacity(out_leafs.len());
+    for (i, t) in out_leafs.iter().enumerate() {
+        upstream.push(out_grads.get(t).cloned().ok_or_else(|| {
+            candle_core::Error::Msg(format!("checkpointed_backward: no gradient for output {i}"))
+        })?);
+    }
+
+    let mut w_live = base.clone();
+    for (key, var) in lora_vars {
+        w_live.insert(key.clone(), var.as_tensor().clone());
+    }
+    let mut lora_grads = GradStore::default();
+    let mut input_grads: Vec<Tensor> = Vec::new();
+    for (k, st) in stages.iter().enumerate().rev() {
+        let in_vars: Vec<Var> = stage_inputs[k]
+            .iter()
+            .map(Var::from_tensor)
+            .collect::<Result<_>>()?;
+        let in_leafs: Vec<Tensor> = in_vars.iter().map(|v| v.as_tensor().clone()).collect();
+        let outs = (st.run)(&w_live, &in_leafs).map_err(|e| {
+            candle_core::Error::Msg(format!("died in backward (recomputing stage {k}): {e:?}"))
+        })?;
+        if outs.len() != upstream.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "checkpointed_backward: stage {k} returned {} outputs, expected {}",
+                outs.len(),
+                upstream.len()
+            )));
+        }
+        let mut seeded: Option<Tensor> = None;
+        for (o, g) in outs.iter().zip(&upstream) {
+            let t = o.mul(g)?.sum_all()?;
+            seeded = Some(match seeded {
+                None => t,
+                Some(p) => p.add(&t)?,
+            });
+        }
+        let seeded = seeded.ok_or_else(|| {
+            candle_core::Error::Msg(format!("checkpointed_backward: stage {k} has no outputs"))
+        })?;
+        let grads = seeded
+            .backward()
+            .map_err(|e| candle_core::Error::Msg(format!("died in backward (stage {k}): {e:?}")))?;
+        let next: Vec<Tensor> = in_leafs
+            .iter()
+            .map(|t| {
+                grads.get(t).cloned().ok_or_else(|| {
+                    candle_core::Error::Msg(format!(
+                        "checkpointed_backward: no gradient through stage {k}"
+                    ))
+                })
+            })
+            .collect::<Result<_>>()?;
+        if k == 0 {
+            input_grads = next.clone();
+        }
+        for (_, var) in lora_vars {
+            if let Some(g) = grads.get(var.as_tensor()) {
+                lora_grads.insert(var.as_tensor(), g.clone());
+            }
+        }
+        upstream = next;
+    }
+    Ok((loss_val, input_grads, lora_grads))
 }
 
 /// cos >= COS_MIN and rel L2 <= REL_L2_MAX, computed in f64 over f32 values.

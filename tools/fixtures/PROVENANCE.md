@@ -63,6 +63,40 @@ gradients specifically: worst rel L2 1.12e-2, worst cosine 0.99994 — the
 These affect op coverage, not op semantics; revisit fixtures if the cloud
 reading changes the structure.
 
+## Fixture vs the faithful-klein stack in `throughput.rs` (2026-10-28)
+
+Checked `gen_block.py` against the layout `crates/foundry-spike/src/bin/
+throughput.rs` now builds, which follows `docs/RESEARCH.md` section 2 (the
+klein 4B config — note there is no section 3.1; section 3 is "Not yet
+researched"). The fixture block does **not** match that layout. The fixtures
+were deliberately **not regenerated**: `gen_block.py` is unchanged and every
+recorded tensor stays bit-identical. `throughput.rs` builds the faithful
+layout with its own random weights; the fixture stays the small block whose
+purpose is op-semantics verification, not shape fidelity.
+
+| | fixture (`gen_block.py`) | real klein / `throughput.rs` |
+|---|---|---|
+| single-block in-projection | three linears: `single.to_qkv` (dim→3·dim), `mlp_gate`, `mlp_up` (dim→512) | ONE fused linear dim→9·dim = 27648 at dim 3072 (q,k,v of 3072, then SwiGLU gate and up of 9216) |
+| single-block out-projection | none — `out = x + g_at*attn + g_mlp*mlp` adds the gated branches straight to the residual | ONE fused linear (dim+mlp)→dim = 12288→3072 over the attention output joined with the activated MLP |
+| MLP width | 512 = 2·dim | `mlp_ratio` 3.0 → 9216 |
+| modulation | one linear *per block*, with bias | one bias-free linear shared by all 25 blocks |
+| LoRA targets | `double.img.to_q`, `double.img.to_v`, `single.to_qkv` | rank 4 on the fused single-stream in/out projections plus double `img.to_q`/`to_v`; the real target modules and rank are still an open item (`docs/RESEARCH.md` section 3, `docs/MODEL_SUPPORT.md`) |
+| RoPE theta | 10000 | 2000 |
+| double-stream block | separate img/txt q,k,v,out + per-stream SwiGLU: shape matches real klein apart from the shared bias-free modulation | same |
+
+Two consequences for anyone reusing the fixture:
+
+- The fixture exercises *no* fused-in/out-projection code path and *no*
+  shared-modulation path, so those two are verified only by the throughput
+  run's own forward/backward consistency, not against a PyTorch reference.
+- The fixture's single-block `mlp_down` (512→dim) has no counterpart in the
+  faithful layout, where the MLP output width is folded into the fused
+  out-projection input.
+
+Unchanged fixture quirks that `throughput.rs` also reproduces: the joint
+sequence is concat(txt, img) while its single-block RoPE tables are built
+img-then-txt, and the equal-quarter RoPE axis split.
+
 ## License
 
 Generated with PyTorch (BSD-3-Clause) as a dev tool only; no third-party source
