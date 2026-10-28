@@ -4,7 +4,7 @@ Each item is sized for one focused session within a local model's context window
 
 ## Phase 0: research (this document set)
 - [x] RESEARCH, MODEL_SUPPORT, ARCHITECTURE, TESTING, STRATA (partial), IMPLEMENTATION_PLAN written. Tag: `v0.0.2-research`.
-- [ ] Record Windows toolchain versions in `ARCHITECTURE.md` (needs commands run on the desktop).
+- [x] Record Windows toolchain versions in `ARCHITECTURE.md`.
 - [ ] **Claude:** read the header of a real FLUX.2 klein LoRA `.safetensors` and record tensor names, alpha and scale conventions in `RESEARCH.md`.
 - [ ] **Claude:** read the diffusers FLUX.2 pipeline source to confirm text-encoder layer selection, timestep sampling and loss.
 

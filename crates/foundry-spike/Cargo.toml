@@ -1,0 +1,11 @@
+[package]
+name = "foundry-spike"
+version = "0.0.1"
+edition.workspace = true
+description = "Phase 0.5 numerical feasibility spike (temporary; not part of the shipped app)"
+publish = false
+
+[dependencies]
+# Loads the CUDA driver and NVRTC at run time, so it builds without the CUDA toolkit installed.
+# cuda-13040 matches the installed toolkit (13.4) on the dev machine.
+cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-13040"] }

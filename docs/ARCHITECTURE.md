@@ -31,13 +31,21 @@ As in SPEC sections 15 to 17. Memory release is measured with NVML (`nvml-wrappe
 - Keep the optimizer state to the adapter parameters only.
 - Do not add gradient checkpointing or block swapping until correctness is proven (SPEC section 44); Candle has no checkpointing mentioned.
 
-## Windows toolchain (to record from the dev machine)
-Fill in once measured; run on the desktop: `rustc --version`, `cargo --version`, `nvcc --version`, `nvidia-smi`, and the installed MSVC Build Tools and Windows SDK versions.
+## Windows toolchain (recorded 2026-10-28, dev machine)
 
 | Item | Version |
 |---|---|
-| Rust | (to record) |
-| MSVC Build Tools / Windows SDK | (to record) |
-| CUDA Toolkit / nvcc | (to record) |
-| NVIDIA driver | (to record) |
-| cuDNN | (to record; cudarc lists 8.9.7, 9.10.2, 9.21.1) |
+| GPU | NVIDIA GeForce RTX 4090, 24564 MiB |
+| NVIDIA driver | 616.64 |
+| CUDA Toolkit / nvcc | 13.4, V13.4.92 (`cuda_13.4.r13.4/compiler.38855100_0`) |
+| Rust | 1.99.0 (`b940084d7 2026-09-28`), toolchain `stable-x86_64-pc-windows-msvc` |
+| Cargo | 1.99.0 (`5f94df478 2026-08-27`) |
+| Visual Studio | Community 2022 17.14.43, with "Desktop development with C++" (MSVC v143 x64/x86 build tools) |
+| Windows SDK | 10.0.26100.7705 (Windows 11 SDK) |
+| cudarc | pinned `=0.19.10` with `cuda-13040`, loaded at run time (`dynamic-loading`) |
+| cuDNN | not checked; not needed until a path requires it (cudarc lists 8.9.7, 9.10.2, 9.21.1) |
+
+Notes:
+- The installer did not put the CUDA `bin` folder on PATH; it was added to the user PATH. `CUDA_PATH` is set system-wide.
+- The `CraftML` account is an administrator again as of 2026-10-28; system installs were first done from a second admin account.
+- Candle uses cudarc 0.19.10 with `cuda-version-from-build-system` and `dynamic-linking`; CUDA 13.4 is within cudarc's supported range (11.4 to 13.4).
