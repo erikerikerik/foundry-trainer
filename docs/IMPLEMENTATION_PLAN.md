@@ -21,8 +21,8 @@ Inputs for all items: `docs/SPEC.md` section 22, `docs/ARCHITECTURE.md`, `docs/T
 - [x] 0.5.5 Full-block backward including LoRA A/B gradients. Accept: LoRA gradients within tolerance.
 - [x] 0.5.6 AdamW step on LoRA parameters. Accept: update within tolerance after 1 and 10 steps.
 - [x] 0.5.7 Repeat/determinism and 1000-iteration stability run. Accept: bit-identical repeats, no drift in loss on fixed data.
-- [ ] 0.5.8 Memory teardown test with NVML. Accept: free VRAM back within 200 MB of baseline.
-- [ ] 0.5.8b Worker-process teardown (added 2026-10-28 after in-process 0.5.8 failed reproducibly by ~344 MB): parent reads NVML free VRAM, spawns a child process that runs the training burst, waits for exit, reads NVML again. Accept: free VRAM back within 200 MB of baseline, 3 consecutive runs.
+- [ ] 0.5.8 Memory teardown test with NVML. (In-process FAIL, 344 MB; superseded by the worker-process design and item 0.5.8b below.) Accept: free VRAM back within 200 MB of baseline.
+- [x] 0.5.8b (PASS 2026-10-28, 0.0 MB deficit x3) Worker-process teardown (added 2026-10-28 after in-process 0.5.8 failed reproducibly by ~344 MB): parent reads NVML free VRAM, spawns a child process that runs the training burst, waits for exit, reads NVML again. Accept: free VRAM back within 200 MB of baseline, 3 consecutive runs.
 - [ ] 0.5.9 Throughput measurement at the real klein block dimensions and 1024px token count. Accept: step time recorded; usable-or-not judgement written in `BUILD_LOG.md`.
 - [x] 0.5.10 Decision record: PASS or FAIL, chosen path (A, B or C), confirm Backend #1. Tag a passing implementation `v0.0.3-spike-pass`. (PASS, path A; 0.5.8/0.5.9 remain owner-run measurements — see the 2026-10-28 decision record in `BUILD_LOG.md`.)
 

@@ -375,13 +375,9 @@ fn double_block(
 /// up of MLP_HIDDEN each, then ONE fused out-projection (`to_out`,
 /// 12288 -> DIM) over the attention output joined with the activated MLP.
 ///
-/// The two adaLN gates are applied to the branches *before* the join rather
-/// than to halves of the out-projection afterwards. The projection is linear,
-/// so `W @ [g_at*a ; g_mlp*m] == W1 @ (g_at*a) + W2 @ (g_mlp*m)` — the two
-/// readings are identical, and gating first keeps the fused matmul whole.
-/// (Assumption: which half of the out-projection reads which branch, and
-/// whether the gates sit before or after it, is not pinned down in
-/// `RESEARCH.md`; it is throughput-identical either way.)
+/// One adaLN gate scales the whole out-projection output before the residual
+/// add (the diffusers single-block structure as recorded in `RESEARCH.md`;
+/// treat the exact gate count as unverified until the source is re-read).
 fn single_block(b: &Blk, x: &Tensor, modp: &Mod, rt: &RopeTables) -> Result<Tensor> {
     let all = b.cfg.all_seq();
     let nh = layer_norm_mod(x, &modp.sh1, &modp.sc1, NORM_EPS)?;
@@ -423,14 +419,12 @@ fn single_block(b: &Blk, x: &Tensor, modp: &Mod, rt: &RopeTables) -> Result<Tens
         .contiguous()?
         .reshape((all, DIM))?;
     let act = wide(3)?.silu()?.mul(&wide(3 + MLP_RATIO)?)?;
-    let joined = Tensor::cat(
-        &[
-            &modp.g1.broadcast_mul(&attn)?,
-            &modp.g2.broadcast_mul(&act)?,
-        ],
-        D::Minus1,
-    )?;
-    x + linear(b.w, &format!("{}.to_out", b.p), &joined)?
+    let joined = Tensor::cat(&[&attn, &act], D::Minus1)?;
+    let out = linear(b.w, &format!("{}.to_out", b.p), &joined)?;
+    // One gate (DIM wide) on the fused out-projection's output. The earlier
+    // per-branch gating multiplied a DIM-wide gate into the 9216-wide MLP
+    // activation, which cannot broadcast (second harness bug, 2026-10-28).
+    x + modp.g1.broadcast_mul(&out)?
 }
 
 fn forward(
