@@ -38,8 +38,8 @@
 //!   the activated MLP. The adaLN gates are applied to the two branches
 //!   *before* the join rather than to halves of the projection output after
 //!   it: identical by linearity, and it keeps the fused matmul whole.
-//! - the fused linears carry zero biases here only because the lib's `linear`
-//!   requires a bias key; the reference has none. Throughput-neutral.
+//! - every linear is bias-free, as in klein (diffusers creates all block,
+//!   modulation, embedder and output linears with `bias=False`).
 //! - LoRA: rank 4, alpha 4, so scale alpha/rank = 1.0, on exactly the modules
 //!   the real klein LoRA file adapts (`RESEARCH.md` section 3.1) — the
 //!   double-stream *image* to_q/to_k/to_v/to_out (the reference's `to_out.0`)
@@ -344,8 +344,8 @@ fn rand_w(dev: &Device, dtype: DType, shape: (usize, usize)) -> Result<Tensor> {
         .contiguous()
 }
 
-/// Add a linear (weight + zero bias; the lib's `linear` requires the bias
-/// key). Optionally its LoRA A/B factors: A randn, B zero — standard LoRA
+/// Add a bias-free linear (klein has no linear biases). Optionally its LoRA
+/// A/B factors: A randn, B zero — standard LoRA
 /// init, contribution starts at zero. Returns the base parameter count.
 fn add_linear(
     w: &mut Weights,
@@ -361,10 +361,6 @@ fn add_linear(
         format!("weights/{name}.weight"),
         rand_w(dev, dt, (out_dim, in_dim))?,
     );
-    w.insert(
-        format!("weights/{name}.bias"),
-        Tensor::zeros((out_dim,), dt, dev)?,
-    );
     if lora {
         w.insert(
             format!("weights/{name}.lora_a"),
@@ -378,7 +374,7 @@ fn add_linear(
             Tensor::zeros((out_dim, LORA_RANK), dt, dev)?,
         );
     }
-    Ok(out_dim * in_dim + out_dim)
+    Ok(out_dim * in_dim)
 }
 
 fn add_mlp(w: &mut Weights, dev: &Device, cfg: &Cfg, name: &str) -> Result<usize> {

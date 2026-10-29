@@ -268,10 +268,15 @@ impl CustomOp3 for AttnBwd {
 /// i.e. scale 1.0 (`RESEARCH.md` section 3.1), which is what the throughput
 /// harness passes here.
 pub fn linear_scaled(w: &Weights, name: &str, x: &Tensor, scale: f64) -> Result<Tensor> {
-    // y = W x + b + (alpha/rank) * B (A x) when LoRA tensors exist
-    let y = x
-        .matmul(&get(w, &format!("weights/{name}.weight"))?.t()?)?
-        .broadcast_add(get(w, &format!("weights/{name}.bias"))?)?;
+    // y = W x [+ b] + (alpha/rank) * B (A x) when LoRA tensors exist.
+    // The bias is optional: the fixture block has biases, klein's linears are
+    // all bias-free (diffusers `transformer_flux2.py`). A fixture weight with a
+    // missing bias would still fail its golden comparison.
+    let y = x.matmul(&get(w, &format!("weights/{name}.weight"))?.t()?)?;
+    let y = match w.get(&format!("weights/{name}.bias")) {
+        Some(bias) => y.broadcast_add(bias)?,
+        None => y,
+    };
     let a = w.get(&format!("weights/{name}.lora_a"));
     let b = w.get(&format!("weights/{name}.lora_b"));
     if let (Some(a), Some(b)) = (a, b) {
