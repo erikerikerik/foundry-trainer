@@ -1,7 +1,7 @@
 # STATUS
 
 ## Current milestone
-Phase 0 research complete. Phase 0.5 spike **measurements complete** (2026-10-28, day 2 of the 10-day budget): numerics 0.5.1 to 0.5.7 PASS (tag `v0.0.3-spike-pass`), worker-process teardown 0.5.8b PASS (0.0 MB deficit x3; in-process 0.5.8 FAIL by 344 MB, design changed to a worker process), checkpointed gradients unchanged on GPU, throughput 0.5.9 measured: 512px usable (1.4 s/step, 15 GB peak), 1024px not usable as built (card full, 111 s/step). Backend #1 (FLUX.2-klein-base-4B) stays. Open before Phase 1: owner confirmation of the 0.5.9 judgement and a merge of `phase-0-5-spike` to `main`.
+Phase 0.5 spike **complete and merged to `main`** (2026-10-28, tag `v0.0.3b-spike-clean` at 16cb7bf; numerics PASS tag `v0.0.3-spike-pass`). Owner confirmed the 0.5.9 judgement: 512px training is usable now (checkpointed, ~1.4 s/step, ~15 GB peak); 1024px comes with the Phase 5 attention-memory work. Backend #1: FLUX.2-klein-base-4B. Next: Phase 1 on branch `phase-1-skeleton`.
 
 ## Completed
 - Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
@@ -26,7 +26,7 @@ Phase 0 research complete. Phase 0.5 spike **measurements complete** (2026-10-28
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- Nothing running. The local-agent task list is empty until the branch merges; the remaining Phase 0.5 items are owner-run GPU measurements.
+- Phase 1 item 1.1 (Cargo workspace and crate stubs per SPEC section 5) on `phase-1-skeleton`. Not started.
 
 ## Known issues
 - The spike fixtures use a simplified klein-style block (shared modulation, biases, fixture RoPE axes, LoRA scale 2.0; `tools/fixtures/PROVENANCE.md`). They prove the math, not the exact klein structure. Regenerating one fixture at the real structure is open (needs Python under `tools/fixtures/`).
@@ -35,10 +35,10 @@ Phase 0 research complete. Phase 0.5 spike **measurements complete** (2026-10-28
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Owner: confirm the 0.5.9 judgement (512px usable, 1024px needs attention-memory work in Phase 5); restart Strata for the local agent.
-2. Merge `phase-0-5-spike` to `main` and tag (push the tag from the desktop) once `cargo clippy --all-targets -- -D warnings` and `cargo test` are green on the desktop at the branch head.
-3. Phase 1 item 1.1 (workspace skeleton) after the merge.
-4. Research items resolved 2026-10-28 from source: text layers `[9, 18, 27]`, training uses unshifted sigmas (shift exposed as an option), alpha read from metadata else = rank. See `docs/RESEARCH.md` sections 3 and 3.1.
+1. Local agent: Phase 1 item 1.1, one commit per plan item (`docs/KICKOFF.md`), on `phase-1-skeleton`.
+2. Local agent (Python allowed only under `tools/fixtures/`): regenerate one fixture at the real klein structure (three modulations, bias-free, real RoPE axes, scale 1.0).
+3. Owner (GPU, Strata unloaded): item 0.5.9b instrumented throughput at 512/768/1024px.
+4. Owner: confirm or change the spike time-box defaults for future phases.
 
 ## Last known working commit
-See `git log` on `main`.
+`main` at 16cb7bf (tag `v0.0.3b-spike-clean`): `cargo clippy -D warnings` and `cargo test` green on the desktop.
