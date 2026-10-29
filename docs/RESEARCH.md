@@ -69,8 +69,36 @@ Researched 2026-10-27. Each finding below was read from the linked page. Items m
 - [Krea 2](https://www.krea.ai/krea-2-open-source): open weights on Hugging Face (`krea/Krea-2-Raw`), positioned as the LoRA training base; size, architecture and license terms not on the page.
 - Larger FLUX and Qwen-Image models remain Backend #2 and #3 per SPEC section 25; not researched yet.
 
-## 3. Not yet researched
-- LoRA tensor naming, alpha and scale conventions for FLUX.2 klein (SPEC section 28). Plan: read the header of a real klein LoRA `.safetensors`.
+## 3. FLUX.2 klein training recipe (diffusers sources, read 2026-10-28)
+
+Read through a fetch tool that summarizes pages, from the diffusers `main` branch: [`pipeline_flux2_klein.py`](https://raw.githubusercontent.com/huggingface/diffusers/main/src/diffusers/pipelines/flux2/pipeline_flux2_klein.py) and [`train_dreambooth_lora_flux2_klein.py`](https://raw.githubusercontent.com/huggingface/diffusers/main/examples/dreambooth/train_dreambooth_lora_flux2_klein.py). Figures below are as reported by that summary; re-read the source files directly before they become test fixtures.
+
+- **Text encoder:** Qwen3ForCausalLM, prompt wrapped as one user chat message (generation prompt on, thinking off), `max_sequence_length` 512, hidden states from three layers stacked so the embedding width is 3 x 2560 = 7680 (confirms the earlier inference).
+  - **Discrepancy to resolve:** the pipeline default layers are `(9, 18, 27)`, but the training script default `--text_encoder_out_layers` is `[10, 20, 30]`. Which one a trained LoRA expects is **Open**; a trainer must expose it and default to the training script's value, since that is what produces LoRAs.
+- **Latents:** VAE `mode()` (no sampling), patchify 2x2 into channels (32 -> 128), then standardize with `vae.bn` running stats: `(x - mean) / sqrt(var + batch_norm_eps)`; pixels scaled with mean 0.5, std 0.5. Cache normalized latents.
+- **Position ids (4 axes: T, H, W, L):** text ids `[0, 0, 0, l]`; image latent ids `[0, h, w, 0]`; reference images use T = 10 + 10 i. **Gap in the spike fixture:** the spike puts image H/W on axes 0/1 and text index on axis 0. Throughput-neutral, but Phase 4 inference must use the real axis assignment.
+- **Noising and loss (training script):** `noisy = (1 - sigma) * x + sigma * noise`; target = `noise - x`; per-sample mean of `weighting * (pred - target)^2`, weighting uniform by default; transformer receives `timesteps / 1000`.
+- **Timestep sampling:** `weighting_scheme` default `none` (choices `sigma_sqrt`, `logit_normal`, `mode`, `cosmap`); `logit_mean` 0.0, `logit_std` 1.0, `mode_scale` 1.29; indices from `u * num_train_timesteps`. Whether training applies the resolution-dependent shift is **Open** (inference uses `mu` from image sequence length with constants a1 8.73809524e-05, b1 1.89833333, a2 0.00016927, b2 0.45666666; CFG default 4.0 for base models).
+- **LoRA defaults:** rank 4, alpha 4 (alpha/rank 1.0), dropout 0, `init_lora_weights="gaussian"`; targets `to_k`, `to_q`, `to_v`, `to_out.0`, `to_qkv_mlp_proj`, plus single-block `attn.to_out` entries (indices 0-23 in the script; klein 4B has 20 single blocks). Base weights stay in the mixed-precision dtype; LoRA params upcast to fp32 only for fp16.
+- **Optimizer defaults:** AdamW, betas (0.9, 0.999), eps 1e-8, weight decay 1e-4, lr 1e-4, constant schedule with 500 warmup steps, grad clip 1.0. Differs from the spike's AdamW test (lr 1e-3, wd 0); that test only validated the update rule.
+- **Saving:** `Flux2KleinPipeline.save_lora_weights`, file `pytorch_lora_weights.safetensors`, keys prefixed `transformer.`.
+- **Real klein LoRAs exist** for checking naming, for example [MarioAlviano/lora-sofia-pollo-flux2-klein-4b](https://huggingface.co/MarioAlviano/lora-sofia-pollo-flux2-klein-4b) (8,374,984 bytes, base `black-forest-labs/FLUX.2-klein-4B`, card license "other"). The tensor names inside were **not** readable through the tools available; the file's JSON header must be read locally.
+
+### 3.1 Real klein LoRA file layout (header read 2026-10-28)
+
+Read from the JSON header of `pytorch_lora_weights.safetensors` in [MarioAlviano/lora-sofia-pollo-flux2-klein-4b](https://huggingface.co/MarioAlviano/lora-sofia-pollo-flux2-klein-4b) (made with the diffusers klein trainer defaults; card license "other", so only names and shapes are recorded here, no weights). Header parsed locally: 120 tensors, 4,177,920 values, 8,355,840 bytes of bf16 data, matching the 8,374,984-byte file.
+
+- **Key format:** `transformer.<module path>.lora_A.weight` and `.lora_B.weight`. A is `[rank, in]`, B is `[out, rank]`. All BF16. Rank 4.
+- **Alpha is not a tensor.** The `__metadata__` block has `format: "pt"` and `lora_adapter_metadata`, a JSON string of the PEFT config with `transformer.r` 4, `transformer.lora_alpha` 4, `target_modules`, `init_lora_weights` "gaussian", `use_rslora` false, `use_dora` false, `peft_version` 0.18.1. Scale = alpha / rank = 1.0. Foundry should write the same metadata, and by default set alpha equal to rank so a loader that ignores the metadata still gets scale 1.0 (the loader behavior is **unverified**).
+- **Double-stream blocks** (`transformer_blocks.0` to `.4`, 5 blocks): only the image-stream projections are adapted: `attn.to_q`, `attn.to_k`, `attn.to_v`, `attn.to_out.0`, each `3072 -> 3072`. The text-stream (`add_*`) projections and feed-forwards are not adapted by default.
+- **Single-stream blocks** (`single_transformer_blocks.0` to `.19`, 20 blocks): two adapted modules each:
+  - `attn.to_qkv_mlp_proj`: A `[4, 3072]`, B `[27648, 4]`. The fused projection outputs 27648 = 3 x 3072 (Q, K, V) + 2 x 9216 (SwiGLU gate and up, mlp hidden 9216 = 3 x 3072).
+  - `attn.to_out`: A `[4, 12288]`, B `[3072, 4]`. Its input is 12288 = 3072 (attention output) + 9216 (activated MLP), concatenated.
+- This confirms `mlp_ratio` 3 with SwiGLU, and that the single block is **one fused in-projection (3072 -> 27648) and one fused out-projection (12288 -> 3072)**.
+- **Spike fidelity gap:** the throughput harness used separate `to_qkv` (3072 -> 9216), `to_out` (3072 -> 3072) and a 4x MLP, which is not this layout. The fixture block also needs checking against it (see `PROVENANCE.md`).
+
+## 4. Not yet researched
+- Whether diffusers' LoRA loader reads alpha from the metadata or assumes alpha = rank (section 3.1); the text-layer question `(9, 18, 27)` vs `(10, 20, 30)`; whether training applies the resolution-dependent timestep shift.
 - SafeTensors format details beyond the public spec.
 - FluxGym UX and Kohya methodology.
 - Strata lifecycle: partially verified, see `STRATA.md`.

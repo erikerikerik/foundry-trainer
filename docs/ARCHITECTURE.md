@@ -26,6 +26,9 @@ Path B is the fallback if A cannot meet tolerances inside the budget. The choice
 ## GPU ownership and handoff
 As in SPEC sections 15 to 17. Memory release is measured with NVML (`nvml-wrapper` loads the NVML library at runtime and reports an error if it is absent, so Foundry can start without it). Windows behavior of the wrapper is to be confirmed on the dev machine.
 
+## Training runs in a worker process (owner-confirmed 2026-10-28)
+Measured in the spike: dropping the Candle device inside a process left ~344 MB of VRAM held (3 runs: 344.0, 344.0, 344.5 MB; gate 200 MB), while process exit returned all of it. So the Foundry app never trains in its own process. Each training job (and each GPU-heavy dataset step, such as caching latents) runs in a short-lived Rust worker process that the app starts and that exits when the job ends or is cancelled. The app measures free VRAM with NVML before start and after exit (CLAUDE.md rule 5). A crashed worker cannot take down the app or the project data. Both sides are Rust; no Python. Verification: spike item 0.5.8b. Worker/app protocol (stdin/stdout JSON lines or a local socket) is decided in Phase 1.
+
 ## Training-memory strategy (design intent, not yet proven)
 - Precompute and cache VAE latents and text embeddings, then unload the VAE and text encoder before training so only the transformer, LoRA weights and optimizer state are resident.
 - Keep the optimizer state to the adapter parameters only.
