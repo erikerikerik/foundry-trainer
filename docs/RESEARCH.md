@@ -52,7 +52,7 @@ Researched 2026-10-27. Each finding below was read from the linked page. Items m
   - Double-stream blocks: separate image and text streams, LayerNorm without affine parameters, bias-free separate Q/K/V and added Q/K/V projections, per-stream feed-forward.
   - Single-stream blocks: one fused linear producing Q, K, V and the MLP input together, a parallel attention + MLP design, one fused output linear.
   - Attention: RMSNorm on Q and K over head dim; per-axis 1D RoPE over 4 axes on position IDs of shape [S, 4]; text tokens first.
-  - Activation: SwiGLU (SiLU of one half times the other half). Modulation: SiLU + bias-free linear, computed once and shared by all blocks. Output: `AdaLayerNormContinuous` then a bias-free projection.
+  - Activation: SwiGLU (SiLU of one half times the other half). Modulation: SiLU + bias-free linear, three of them (corrected 2026-10-28 from `transformer_flux2.py`): `double_stream_modulation_img` and `double_stream_modulation_txt` (each `dim -> 6*dim`, two shift/scale/gate sets, shared by all double blocks) and `single_stream_modulation` (`dim -> 3*dim`, shared by all single blocks). Output: `AdaLayerNormContinuous` then a bias-free projection.
   - Timestep embedding: sinusoidal, 256 channels, then an MLP; the timestep is multiplied by 1000.
 - Training guidance:
   - [BFL docs](https://docs.bfl.ai/flux_2/flux2_klein_training.md): train the Base variants; 4B Base needs a 12 GB NVIDIA GPU and 32 GB system RAM (minimums); learning rate 8e-5 to 1e-4 for LoRA; 1500 to 3000 steps; 512px for iteration, 1024px or more for final; LoRAs typically 10 to 200 MB.

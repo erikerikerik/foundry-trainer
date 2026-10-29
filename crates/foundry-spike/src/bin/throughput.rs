@@ -9,8 +9,9 @@
 //! released when its scope unwinds).
 //!
 //! The stack is laid out to match the real klein block structure as far as
-//! `RESEARCH.md` pins it down (section 2): mlp_ratio 3.0, one modulation
-//! linear shared by all 25 blocks, and a single-stream block whose Q/K/V and
+//! `RESEARCH.md` pins it down (section 2): mlp_ratio 3.0, three modulation
+//! linears (double-stream image, double-stream text, single-stream; each
+//! shared by all blocks of its kind), and a single-stream block whose Q/K/V and
 //! SwiGLU feed come from ONE fused in-projection and whose two branches are
 //! joined into ONE fused out-projection. That lands at ~3.7B params against
 //! the real ~4B, so the VRAM numbers are close to the real model's rather than
@@ -86,9 +87,14 @@ const MLP_HIDDEN: usize = MLP_RATIO * DIM;
 const IN_CHUNKS: usize = 3 + 2 * MLP_RATIO;
 const IN_PROJ: usize = IN_CHUNKS * DIM;
 const OUT_PROJ_IN: usize = DIM + MLP_HIDDEN;
-// One modulation linear for the whole stack (RESEARCH.md: "computed once and
-// shared by all blocks"), keyed `weights/mod.*` — 6*DIM outputs.
-const MOD_KEY: &str = "mod";
+// Three modulation linears, as in diffusers' `Flux2Transformer2DModel`:
+// `double_stream_modulation_img` and `_txt` (2 shift/scale/gate sets = 6*DIM
+// each, shared by all double blocks) and `single_stream_modulation` (1 set =
+// 3*DIM, shared by all single blocks). The image and text streams of a double
+// block are modulated differently.
+const MOD_IMG_KEY: &str = "mod_img";
+const MOD_TXT_KEY: &str = "mod_txt";
+const MOD_SINGLE_KEY: &str = "mod_single";
 // The real klein LoRA header (RESEARCH.md section 3.1): rank 4, alpha 4,
 // `use_rslora` false — hence scale alpha/rank = 1.0.
 const LORA_RANK: usize = 4;
@@ -262,11 +268,9 @@ struct Rts {
     joint: RopeTables,
 }
 
-/// The six adaLN modulation parts, computed ONCE per run from the single
-/// shared modulation linear. `temb_silu` is constant across steps and that
-/// linear is not trainable (LoRA trains the projections), so the six parts are
-/// the same for every block and every step — which is what "one modulation
-/// linear shared by all blocks" means.
+/// The six adaLN modulation parts of one double-block stream (attention set
+/// then MLP set). Computed ONCE per run: `temb_silu` is constant across steps
+/// and the modulation linears are not trainable (LoRA trains the projections).
 struct Mod {
     sh1: Tensor,
     sc1: Tensor,
@@ -276,17 +280,46 @@ struct Mod {
     g2: Tensor,
 }
 
-fn mod_parts(w: &Weights, cfg: &Cfg, temb_silu: &Tensor) -> Result<Mod> {
+/// The single-block modulation: one shift/scale/gate set.
+struct Mod3 {
+    sh: Tensor,
+    sc: Tensor,
+    g: Tensor,
+}
+
+/// All three modulations of the stack.
+struct Mods {
+    img: Mod,
+    txt: Mod,
+    single: Mod3,
+}
+
+fn mod_parts(w: &Weights, cfg: &Cfg, temb_silu: &Tensor) -> Result<Mods> {
     let d = cfg.dim;
-    let modout = lin(w, MOD_KEY, temb_silu)?.reshape(6 * d)?;
-    let part = |i: usize| modout.narrow(0, i * d, d);
-    Ok(Mod {
-        sh1: part(0)?,
-        sc1: part(1)?,
-        g1: part(2)?,
-        sh2: part(3)?,
-        sc2: part(4)?,
-        g2: part(5)?,
+    let split = |key: &str, sets: usize| -> Result<Vec<Tensor>> {
+        let out = lin(w, key, temb_silu)?.reshape(3 * sets * d)?;
+        (0..3 * sets).map(|i| out.narrow(0, i * d, d)).collect()
+    };
+    let six = |key: &str| -> Result<Mod> {
+        let p = split(key, 2)?;
+        Ok(Mod {
+            sh1: p[0].clone(),
+            sc1: p[1].clone(),
+            g1: p[2].clone(),
+            sh2: p[3].clone(),
+            sc2: p[4].clone(),
+            g2: p[5].clone(),
+        })
+    };
+    let s = split(MOD_SINGLE_KEY, 1)?;
+    Ok(Mods {
+        img: six(MOD_IMG_KEY)?,
+        txt: six(MOD_TXT_KEY)?,
+        single: Mod3 {
+            sh: s[0].clone(),
+            sc: s[1].clone(),
+            g: s[2].clone(),
+        },
     })
 }
 
@@ -385,8 +418,10 @@ fn build_stack(dev: &Device, cfg: &Cfg) -> Result<(Weights, usize)> {
     let d = cfg.dim;
     let mut w = Weights::new();
     let mut params = 0usize;
-    // One modulation linear for the entire stack, not one per block.
-    params += add_linear(&mut w, dev, cfg, MOD_KEY, 6 * d, d, false)?;
+    // Three modulation linears for the entire stack, not one per block.
+    params += add_linear(&mut w, dev, cfg, MOD_IMG_KEY, 6 * d, d, false)?;
+    params += add_linear(&mut w, dev, cfg, MOD_TXT_KEY, 6 * d, d, false)?;
+    params += add_linear(&mut w, dev, cfg, MOD_SINGLE_KEY, 3 * d, d, false)?;
     for i in 0..cfg.double_blocks {
         let p = format!("double.{i}");
         for s in ["img", "txt"] {
@@ -443,24 +478,22 @@ fn build_stack(dev: &Device, cfg: &Cfg) -> Result<(Weights, usize)> {
 }
 
 /// One double-stream block (same wiring as the lib's fixture-sized
-/// `double_block`, except that the modulation parts come from the stack's
-/// single shared modulation linear, precomputed once per run).
+/// `double_block`, except that the image and text streams take their own
+/// modulation parts, precomputed once per run from the stack's shared
+/// image and text modulation linears).
 fn double_block(
     b: &Blk,
     img: &Tensor,
     txt: &Tensor,
-    modp: &Mod,
+    mi: &Mod,
+    mt: &Mod,
     rt_i: &RopeTables,
     rt_t: &RopeTables,
 ) -> Result<(Tensor, Tensor)> {
     let (seq_i, seq_t) = (b.cfg.img_seq, b.cfg.txt_len);
     let (h, hd, d) = (b.cfg.heads, b.cfg.head_dim, b.cfg.dim);
-    let (sh1, sc1, g1, sh2, sc2, g2) = (
-        &modp.sh1, &modp.sc1, &modp.g1, &modp.sh2, &modp.sc2, &modp.g2,
-    );
-
-    let ih = layer_norm_mod(img, sh1, sc1, NORM_EPS)?;
-    let th = layer_norm_mod(txt, sh1, sc1, NORM_EPS)?;
+    let ih = layer_norm_mod(img, &mi.sh1, &mi.sc1, NORM_EPS)?;
+    let th = layer_norm_mod(txt, &mt.sh1, &mt.sc1, NORM_EPS)?;
 
     let q_i = {
         let h = lin(b.w, &format!("{}.img.to_q", b.p), &ih)?.reshape((seq_i, h, hd))?;
@@ -521,22 +554,26 @@ fn double_block(
     let a_i = attn.narrow(0, seq_t, seq_i)?;
 
     let img = (img
-        + g1.broadcast_mul(&lin(
+        + mi.g1.broadcast_mul(&lin(
             b.w,
             &format!("{}.img.to_out", b.p),
             &a_i.contiguous()?.reshape((seq_i, d))?,
         )?)?)?;
     let txt = (txt
-        + g1.broadcast_mul(&lin(
+        + mt.g1.broadcast_mul(&lin(
             b.w,
             &format!("{}.txt.to_out", b.p),
             &a_t.contiguous()?.reshape((seq_t, d))?,
         )?)?)?;
 
-    let ih2 = layer_norm_mod(&img, sh2, sc2, NORM_EPS)?;
-    let th2 = layer_norm_mod(&txt, sh2, sc2, NORM_EPS)?;
-    let img = (img + g2.broadcast_mul(&swiglu(b.w, &format!("{}.img.mlp", b.p), &ih2)?)?)?;
-    let txt = (txt + g2.broadcast_mul(&swiglu(b.w, &format!("{}.txt.mlp", b.p), &th2)?)?)?;
+    let ih2 = layer_norm_mod(&img, &mi.sh2, &mi.sc2, NORM_EPS)?;
+    let th2 = layer_norm_mod(&txt, &mt.sh2, &mt.sc2, NORM_EPS)?;
+    let img = (img
+        + mi.g2
+            .broadcast_mul(&swiglu(b.w, &format!("{}.img.mlp", b.p), &ih2)?)?)?;
+    let txt = (txt
+        + mt.g2
+            .broadcast_mul(&swiglu(b.w, &format!("{}.txt.mlp", b.p), &th2)?)?)?;
     Ok((img, txt))
 }
 
@@ -548,10 +585,10 @@ fn double_block(
 /// One adaLN gate scales the whole out-projection output before the residual
 /// add (the diffusers single-block structure as recorded in `RESEARCH.md`;
 /// treat the exact gate count as unverified until the source is re-read).
-fn single_block(b: &Blk, x: &Tensor, modp: &Mod, rt: &RopeTables) -> Result<Tensor> {
+fn single_block(b: &Blk, x: &Tensor, m: &Mod3, rt: &RopeTables) -> Result<Tensor> {
     let (all, h, hd, d) = (b.cfg.all_seq(), b.cfg.heads, b.cfg.head_dim, b.cfg.dim);
     let (mr, mh) = (b.cfg.mlp_ratio, b.cfg.mlp_hidden());
-    let nh = layer_norm_mod(x, &modp.sh1, &modp.sc1, NORM_EPS)?;
+    let nh = layer_norm_mod(x, &m.sh, &m.sc, NORM_EPS)?;
     let fused = lin(b.w, &format!("{}.to_in", b.p), &nh)?.reshape((all, b.cfg.in_chunks(), d))?;
     // chunks 0..3 = Q, K, V; 3..6 = SwiGLU gate; 6..9 = SwiGLU up
     let split = |which: usize| -> Result<Tensor> {
@@ -592,14 +629,14 @@ fn single_block(b: &Blk, x: &Tensor, modp: &Mod, rt: &RopeTables) -> Result<Tens
     // One gate (dim wide) on the fused out-projection's output. The earlier
     // per-branch gating multiplied a dim-wide gate into the mlp_hidden-wide MLP
     // activation, which cannot broadcast (second harness bug, 2026-10-28).
-    x + modp.g1.broadcast_mul(&out)?
+    x + m.g.broadcast_mul(&out)?
 }
 
 fn forward(
     w: &Weights,
     cfg: &Cfg,
     inp: &Inputs,
-    modp: &Mod,
+    modp: &Mods,
     rts: &Rts,
 ) -> Result<(Tensor, Tensor)> {
     let mut img = inp.img.clone();
@@ -610,7 +647,7 @@ fn forward(
             cfg,
             p: format!("double.{i}"),
         };
-        (img, txt) = double_block(&b, &img, &txt, modp, &rts.img, &rts.txt)?;
+        (img, txt) = double_block(&b, &img, &txt, &modp.img, &modp.txt, &rts.img, &rts.txt)?;
     }
     let mut joint = Tensor::cat(&[&txt, &img], 0)?;
     for i in 0..cfg.single_blocks {
@@ -619,7 +656,7 @@ fn forward(
             cfg,
             p: format!("single.{i}"),
         };
-        joint = single_block(&b, &joint, modp, &rts.joint)?;
+        joint = single_block(&b, &joint, &modp.single, &rts.joint)?;
     }
     let final_txt = joint.narrow(0, 0, cfg.txt_len)?;
     let final_img = joint.narrow(0, cfg.txt_len, cfg.img_seq)?;
@@ -630,7 +667,7 @@ fn forward(
 /// join into one joint tensor so every later stage has arity 1 — then the
 /// single blocks. Each closure is the block itself, so the recomputed graph
 /// during backward is exactly the graph the forward pass ran.
-fn build_stages<'a>(cfg: &'a Cfg, modp: &'a Mod, rts: &'a Rts) -> Vec<Stage<'a>> {
+fn build_stages<'a>(cfg: &'a Cfg, modp: &'a Mods, rts: &'a Rts) -> Vec<Stage<'a>> {
     let mut stages: Vec<Stage<'a>> = Vec::with_capacity(cfg.double_blocks + cfg.single_blocks);
     for i in 0..cfg.double_blocks {
         let p = format!("double.{i}");
@@ -642,7 +679,9 @@ fn build_stages<'a>(cfg: &'a Cfg, modp: &'a Mod, rts: &'a Rts) -> Vec<Stage<'a>>
                     cfg,
                     p: p.clone(),
                 };
-                let (img, txt) = double_block(&b, &ins[0], &ins[1], modp, &rts.img, &rts.txt)?;
+                let (img, txt) = double_block(
+                    &b, &ins[0], &ins[1], &modp.img, &modp.txt, &rts.img, &rts.txt,
+                )?;
                 if join {
                     Ok(vec![Tensor::cat(&[&txt, &img], 0)?])
                 } else {
@@ -660,7 +699,7 @@ fn build_stages<'a>(cfg: &'a Cfg, modp: &'a Mod, rts: &'a Rts) -> Vec<Stage<'a>>
                     cfg,
                     p: p.clone(),
                 };
-                Ok(vec![single_block(&b, &ins[0], modp, &rts.joint)?])
+                Ok(vec![single_block(&b, &ins[0], &modp.single, &rts.joint)?])
             }),
         });
     }
@@ -749,7 +788,14 @@ impl Session {
     /// One full training step: forward graph, MSE loss, backward, AdamW on
     /// the LoRA factors (identical structure to `stability.rs`). The two
     /// phases are tagged so an OOM says where it happened.
-    fn step(&mut self, step: usize, cfg: &Cfg, inp: &Inputs, modp: &Mod, rts: &Rts) -> Result<f32> {
+    fn step(
+        &mut self,
+        step: usize,
+        cfg: &Cfg,
+        inp: &Inputs,
+        modp: &Mods,
+        rts: &Rts,
+    ) -> Result<f32> {
         let (final_img, final_txt) = forward(&self.w, cfg, inp, modp, rts)
             .map_err(|e| candle_core::Error::Msg(format!("died in forward: {e:?}")))?;
         let loss = mse(&final_img, &inp.target_img)?.add(&mse(&final_txt, &inp.target_txt)?)?;
@@ -800,7 +846,7 @@ fn train_burst(
     s: &mut Session,
     cfg: &Cfg,
     inp: &Inputs,
-    modp: &Mod,
+    modp: &Mods,
     rts: &Rts,
     stages: Option<&[Stage<'_>]>,
 ) -> Result<(Vec<f32>, Duration)> {
@@ -937,7 +983,7 @@ fn main() {
         (1024 / TOKEN_DOWNSCALE).pow(2)
     );
     println!(
-        "  mlp hidden {MLP_HIDDEN} ({}x dim), one modulation linear for the whole stack, \
+        "  mlp hidden {MLP_HIDDEN} ({}x dim), three modulation linears (double img/txt, single), \
          single block = fused in-projection {DIM} -> {IN_PROJ} + fused out-projection \
          {OUT_PROJ_IN} -> {DIM}; stack ~3.7B params against the real ~4B",
         MLP_RATIO
