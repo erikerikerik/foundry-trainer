@@ -97,6 +97,13 @@ Read from the JSON header of `pytorch_lora_weights.safetensors` in [MarioAlviano
 - This confirms `mlp_ratio` 3 with SwiGLU, and that the single block is **one fused in-projection (3072 -> 27648) and one fused out-projection (12288 -> 3072)**.
 - **Spike fidelity gap:** the throughput harness used separate `to_qkv` (3072 -> 9216), `to_out` (3072 -> 3072) and a 4x MLP, which is not this layout. The fixture block also needs checking against it (see `PROVENANCE.md`).
 
+## 3.2 Prior art: how FluxGym handles memory (read 2026-10-28)
+
+Sources: [FluxGym README](https://github.com/cocktailpeanut/fluxgym) and its [`app.py`](https://raw.githubusercontent.com/cocktailpeanut/fluxgym/main/app.py), as summarized by a fetch tool. FluxGym is a Gradio front end that generates a command for Kohya's `sd-scripts` (`flux_train_network.py`, `sd3` branch) and targets FLUX.1 (12B), with tiers for 12, 16 and 20 GB cards.
+- **Always on:** `--gradient_checkpointing`, `--fp8_base` (base weights in fp8), `--cache_latents_to_disk`, `--cache_text_encoder_outputs(_to_disk)`, `--mixed_precision bf16`, `--sdpa` (PyTorch's fused scaled-dot-product attention). Batch size 1, default resolution 512, LoRA rank 4, loss `l2`, `--discrete_flow_shift 3.1582`, `--timestep_sampling shift`, learning rate 8e-4, `--guidance_scale 1.0`.
+- **Tiers:** 20 GB uses `adamw8bit`; 16 GB uses Adafactor; 12 GB adds `--split_mode` and trains only the single-stream blocks (`train_blocks=single`). No `blocks_to_swap` in the code.
+- **Reading for Foundry:** FluxGym did not solve the problem independently; it inherits kohya's. Gradient checkpointing, cached latents and text outputs, batch 1 and 512px are the same measures our spike found necessary. The two it has that we do not: fp8 base weights (not needed for the 4B model, 7.5 GB in bf16) and fused attention (our hand-written backward materializes the score matrix, which is what stops 1024px). Optimizer-state tricks (8-bit, Adafactor) matter for 12B models, not for a rank-4 LoRA with about 4M trainable values.
+
 ## 4. Not yet researched
 - Whether diffusers' LoRA loader reads alpha from the metadata or assumes alpha = rank (section 3.1); the text-layer question `(9, 18, 27)` vs `(10, 20, 30)`; whether training applies the resolution-dependent timestep shift.
 - SafeTensors format details beyond the public spec.
