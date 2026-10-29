@@ -21,6 +21,10 @@ Obey the time boxes in CLAUDE.md. If you hit a stop condition, write the note in
 Do not start Phase 1. Do not touch docs/SPEC.md.
 ```
 
+## Commit discipline
+
+One commit per plan item (or per numerical or compatibility milestone). Do not bundle several items into one large commit; keep STATUS.md current in the same commit as the work.
+
 ## What the local agent should not do
 
 - Items marked **Claude** in the plan need live web access (Hugging Face headers, diffusers source). Leave them for the cloud session.
