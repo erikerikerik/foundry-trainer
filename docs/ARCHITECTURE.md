@@ -32,6 +32,7 @@ Measured in the spike: dropping the Candle device inside a process left ~344 MB 
 ## Training-memory strategy (design intent, not yet proven)
 - Precompute and cache VAE latents and text embeddings, then unload the VAE and text encoder before training so only the transformer, LoRA weights and optimizer state are resident.
 - Keep the optimizer state to the adapter parameters only.
+- **Measured in the spike (2026-10-28, 4090, random weights):** per-block gradient checkpointing is required (naive full-graph backward runs out of memory even at 512px). With it, 512px trains at about 1.4 s/step and 15 GB peak; 1024px fills the card and runs about 80x slower (likely spilling to system memory), so Phase 5 must add head-chunked or fused attention backward before 1024px is offered. See `BUILD_LOG.md`.
 - Do not add gradient checkpointing or block swapping until correctness is proven (SPEC section 44); Candle has no checkpointing mentioned.
 
 ## Windows toolchain (recorded 2026-10-28, dev machine)

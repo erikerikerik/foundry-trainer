@@ -1,7 +1,7 @@
 # STATUS
 
 ## Current milestone
-Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the desktop 4090**, 0.5.2 fixtures generated, 0.5.3 **PASSED** (Candle bf16 forward, all activations rel L2 <= 6.3e-3 vs 2e-2 tolerance), 0.5.4 **PASSED** (hand-written attention backward CustomOp; gradient cosine 1.000000, worst rel L2 1.4e-6 vs 0.999/2e-2 acceptance), 0.5.5 **PASSED** (full-block backward incl. LoRA A/B gradients; worst rel L2 8.9e-3, below the 1.2e-2 fixture noise floor), 0.5.6 **PASSED** (10 AdamW steps on LoRA params; worst rel L2 1.18e-2 vs `opt1/*`/`opt10/*`, below the 1.64e-2 noise floor), 0.5.7 **PASSED** (bit-identical repeated runs; 1000-step bf16 stability: loss 3.89 -> 2.12, all finite, window means strictly decreasing — no drift; fp32 control shows step rises are Adam overshoot, not precision noise; 2026-10-28). 0.5.10 **decision recorded: PASS on path A**, Backend #1 confirmed as FLUX.2-klein-base-4B, tagged `v0.0.3-spike-pass` (2026-10-28, day 2 of the 10-day budget). Remaining in Phase 0.5: 0.5.8/0.5.8b/0.5.9, owner-run measurements with Strata unloaded (the 0.5.8b worker-process bin and the faithful-dims + gradient-checkpointing rework of 0.5.9 are written and committed). Phase 1 must not start until those are recorded.
+Phase 0 research complete. Phase 0.5 spike **measurements complete** (2026-10-28, day 2 of the 10-day budget): numerics 0.5.1 to 0.5.7 PASS (tag `v0.0.3-spike-pass`), worker-process teardown 0.5.8b PASS (0.0 MB deficit x3; in-process 0.5.8 FAIL by 344 MB, design changed to a worker process), checkpointed gradients unchanged on GPU, throughput 0.5.9 measured: 512px usable (1.4 s/step, 15 GB peak), 1024px not usable as built (card full, 111 s/step). Backend #1 (FLUX.2-klein-base-4B) stays. Open before Phase 1: owner confirmation of the 0.5.9 judgement and a merge of `phase-0-5-spike` to `main`.
 
 ## Completed
 - Repo skeleton, amended `docs/SPEC.md`, `CLAUDE.md`, public GitHub remote, tag `v0.0.1-bootstrap` (on GitHub).
@@ -24,7 +24,7 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Candle's flash-attention is forward only; Burn's autodiff attention is a composed fallback. Hand-written attention backward is likely needed (spike path A), with cudarc kernels as fallback (path B).
 
 ## In progress
-- Nothing left to write locally: the responses to the 0.5.8/0.5.9 failures are implemented and committed — 0.5.8b `worker_teardown.rs` (worker-process teardown), the faithful klein stack in `throughput.rs`, forward-vs-backward OOM reporting, and per-block gradient checkpointing behind `--checkpoint` (gradients proven bit-identical on CPU). What is outstanding is measurement only: whether the worker process releases VRAM within the 200 MB gate, and what the faithful stack + checkpointing cost per step and in peak VRAM (does 512px fit?). Those runs are owner work with Strata unloaded (the local agent runs on Strata) — see `docs/KICKOFF.md` and Next actions 1.
+- Nothing running. Next local-agent task (needs Strata back): CPU smoke test for the throughput stack at tiny sizes; align harness LoRA targets/scale with `docs/RESEARCH.md` 3.1; then run fmt, clippy and test before the merge to `main`.
 
 ## Known issues
 - LoRA tensor naming and the training loss/timestep recipe for klein are unverified (`docs/RESEARCH.md`, section 3). These need live web access, so a local model cannot do them.
@@ -33,11 +33,10 @@ Phase 0 (research) complete in draft. Phase 0.5 spike: 0.5.1 **PASSED on the des
 - Pushing tags from the cloud workspace has been unreliable; push tags from the desktop.
 
 ## Next actions
-1. Owner: items 0.5.8/0.5.9 — unload Strata, then in Git Bash from the repo root:
-   `. tools/dev/vcvars-env.sh && cargo run -p foundry-spike --bin mem_teardown --release`
-   and `cargo run -p foundry-spike --bin throughput --release`; record outputs in `BUILD_LOG.md` and tick the plan.
-2. Cloud Claude: LoRA header and diffusers pipeline reading (Phase 0 leftovers); the fixture structure may need a pass once the real single-block wiring and RoPE axis dims are confirmed.
-3. After 0.5.8/0.5.9 are recorded: Phase 1 item 1.1 (workspace skeleton) may start.
+1. Owner: confirm the 0.5.9 judgement (512px usable, 1024px needs attention-memory work in Phase 5); restart Strata for the local agent.
+2. Local agent: throughput CPU smoke test and LoRA target alignment; `cargo fmt`, `cargo clippy -D warnings`, `cargo test`; then merge `phase-0-5-spike` to `main` and tag (push the tag from the desktop).
+3. Phase 1 item 1.1 (workspace skeleton) after the merge.
+4. Open research: text-layer choice (9,18,27 vs 10,20,30), whether training applies the timestep shift, whether diffusers' loader reads alpha from LoRA metadata.
 
 ## Last known working commit
 See `git log` on `main`.

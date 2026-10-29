@@ -23,7 +23,7 @@ Inputs for all items: `docs/SPEC.md` section 22, `docs/ARCHITECTURE.md`, `docs/T
 - [x] 0.5.7 Repeat/determinism and 1000-iteration stability run. Accept: bit-identical repeats, no drift in loss on fixed data.
 - [ ] 0.5.8 Memory teardown test with NVML. (In-process FAIL, 344 MB; superseded by the worker-process design and item 0.5.8b below.) Accept: free VRAM back within 200 MB of baseline.
 - [x] 0.5.8b (PASS 2026-10-28, 0.0 MB deficit x3) Worker-process teardown (added 2026-10-28 after in-process 0.5.8 failed reproducibly by ~344 MB): parent reads NVML free VRAM, spawns a child process that runs the training burst, waits for exit, reads NVML again. Accept: free VRAM back within 200 MB of baseline, 3 consecutive runs.
-- [ ] 0.5.9 Throughput measurement at the real klein block dimensions and 1024px token count. Accept: step time recorded; usable-or-not judgement written in `BUILD_LOG.md`.
+- [x] 0.5.9 Throughput measurement at the real klein block dimensions and 1024px token count. Accept: step time recorded; usable-or-not judgement written in `BUILD_LOG.md`. (Measured 2026-10-28: 512px checkpointed 1380 ms/step, 14.98 GB peak, usable; 1024px 111 s/step with the card full, not usable as built; see `BUILD_LOG.md`.)
 - [x] 0.5.10 Decision record: PASS or FAIL, chosen path (A, B or C), confirm Backend #1. Tag a passing implementation `v0.0.3-spike-pass`. (PASS, path A; 0.5.8/0.5.9 remain owner-run measurements — see the 2026-10-28 decision record in `BUILD_LOG.md`.)
 
 If path A fails inside its share of the budget (days 1 to 5), switch to path B for days 6 to 10.

@@ -13,6 +13,7 @@ License:          Apache 2.0 (permits shipping what you train)
 Source:           https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B
 Precision:        BF16 weights
 Estimated VRAM:   ~13 GB for inference (model card); LoRA training fits 24 GB (HF blog, 4090, ~60 min / 1800 steps)
+Measured (spike):  512px LoRA step ~1.4 s, ~15 GB peak with gradient checkpointing; 1024px not usable yet (see BUILD_LOG.md 2026-10-28 night)
 Adapter types:    LoRA; diffusers default targets image-stream to_q/to_k/to_v/to_out.0 (5 double blocks) and fused to_qkv_mlp_proj + to_out (20 single blocks), rank 4, alpha 4; layout in RESEARCH.md 3.1
 Status:           confirmed as Backend #1 (numerical spike passed on path A, tag
                   `v0.0.3-spike-pass`); LoRA header conventions still open (needs web)
