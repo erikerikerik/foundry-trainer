@@ -13,12 +13,13 @@ Then paste the prompt below as the first message.
 ## Kickoff prompt
 
 ```text
-Read CLAUDE.md, then STATUS.md, then only the "Phase 0.5" section of docs/IMPLEMENTATION_PLAN.md.
-Work on branch phase-0-5-spike. Do the first unchecked item in Phase 0.5 that needs no web access
-and no VRAM measurement. For each item: implement it, run cargo fmt, cargo clippy -D warnings and
-cargo test, tick the item in IMPLEMENTATION_PLAN.md, update STATUS.md, commit, and continue to the next.
+Read CLAUDE.md, then STATUS.md, then only the "Phase 1" section of docs/IMPLEMENTATION_PLAN.md
+and the SPEC.md section that item cites.
+Work on branch phase-1-skeleton. Do the first unchecked Phase 1 item. For each item: implement it,
+run cargo fmt, cargo clippy --all-targets -D warnings and cargo test, tick the item in
+IMPLEMENTATION_PLAN.md, update STATUS.md, commit (one commit per item), and continue to the next.
 Obey the time boxes in CLAUDE.md. If you hit a stop condition, write the note in STATUS.md and stop.
-Do not start Phase 1. Do not touch docs/SPEC.md.
+Do not start Phase 2. Do not touch docs/SPEC.md. Do not merge to main.
 ```
 
 ## Commit discipline
