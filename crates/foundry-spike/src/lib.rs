@@ -263,7 +263,11 @@ impl CustomOp3 for AttnBwd {
     }
 }
 
-pub fn linear(w: &Weights, name: &str, x: &Tensor) -> Result<Tensor> {
+/// `linear` with an explicit LoRA scale (alpha/rank). The fixture replay uses
+/// `LORA_SCALE` (alpha 8 / rank 4); a real klein LoRA carries alpha 4 at rank 4,
+/// i.e. scale 1.0 (`RESEARCH.md` section 3.1), which is what the throughput
+/// harness passes here.
+pub fn linear_scaled(w: &Weights, name: &str, x: &Tensor, scale: f64) -> Result<Tensor> {
     // y = W x + b + (alpha/rank) * B (A x) when LoRA tensors exist
     let y = x
         .matmul(&get(w, &format!("weights/{name}.weight"))?.t()?)?
@@ -271,13 +275,14 @@ pub fn linear(w: &Weights, name: &str, x: &Tensor) -> Result<Tensor> {
     let a = w.get(&format!("weights/{name}.lora_a"));
     let b = w.get(&format!("weights/{name}.lora_b"));
     if let (Some(a), Some(b)) = (a, b) {
-        let lo = x
-            .matmul(&a.t()?)?
-            .matmul(&b.t()?)?
-            .affine(LORA_SCALE, 0.0)?;
+        let lo = x.matmul(&a.t()?)?.matmul(&b.t()?)?.affine(scale, 0.0)?;
         return y.broadcast_add(&lo);
     }
     Ok(y)
+}
+
+pub fn linear(w: &Weights, name: &str, x: &Tensor) -> Result<Tensor> {
+    linear_scaled(w, name, x, LORA_SCALE)
 }
 
 pub fn swiglu(w: &Weights, name: &str, x: &Tensor) -> Result<Tensor> {
