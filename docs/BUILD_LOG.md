@@ -102,3 +102,10 @@ Owner-run on the desktop 4090, Strata stopped, random-weight faithful klein stac
 ## 2026-10-27: bootstrap
 - Spec reviewed and amended before any code. Key changes: offline reference fixtures allowed (data only), Phase 0.5 spike built from the leading model candidate's real ops, hard time box on the spike, Origin/Host validation on the local API, dev-VRAM rule for the shared 4090.
 - Backend #1 is deliberately not FLUX or Qwen by default: 12B+ models do not fit in bf16 on 24 GB with activations. Phase 0 picks the newest suitable smaller model.
+
+## 2026-10-28 (late): klein semantics open items resolved from source
+Read the diffusers pipeline, training script, scheduler, `peft_utils`, and BFL's `flux2` text encoder directly.
+- Text layers: BFL reference and diffusers pipeline both use `[9, 18, 27]` via `hidden_states[k]`; the diffusers training script default `[10, 20, 30]` disagrees. Decision: Foundry uses `[9, 18, 27]`. Impact: Phase 4 inference validation and Phase 5 text-embedding cache must use these taps.
+- Timestep shift: the training script trains on unshifted sigmas (dynamic shifting on means the scheduler constructor skips the static shift). Decision: default unshifted to match the reference; expose a shift option.
+- Alpha: diffusers builds the PEFT config from `lora_adapter_metadata` when present, else alpha = rank. Alpha = rank is safe either way.
+- Throughput harness (6de3274) reviewed: LoRA values 4,177,920 matches an independent count from the RESEARCH 3.1 layout.

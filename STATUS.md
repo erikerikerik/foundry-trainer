@@ -37,7 +37,7 @@ Phase 0 research complete. Phase 0.5 spike **measurements complete** (2026-10-28
 1. Owner: confirm the 0.5.9 judgement (512px usable, 1024px needs attention-memory work in Phase 5); restart Strata for the local agent.
 2. Merge `phase-0-5-spike` to `main` and tag (push the tag from the desktop). The CPU smoke test and LoRA alignment are done; `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test -p foundry-spike` (2 tests) are green as of this commit.
 3. Phase 1 item 1.1 (workspace skeleton) after the merge.
-4. Open research: text-layer choice (9,18,27 vs 10,20,30), whether training applies the timestep shift, whether diffusers' loader reads alpha from LoRA metadata.
+4. Research items resolved 2026-10-28 from source: text layers `[9, 18, 27]`, training uses unshifted sigmas (shift exposed as an option), alpha read from metadata else = rank. See `docs/RESEARCH.md` sections 3 and 3.1.
 
 ## Last known working commit
 See `git log` on `main`.
