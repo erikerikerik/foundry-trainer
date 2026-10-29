@@ -681,19 +681,24 @@ fn make_inputs(dev: &Device, cfg: &Cfg) -> Result<Inputs> {
 }
 
 /// RoPE tables for the image, text and joint streams, in the compute dtype.
+///
+/// Axes are (T, H, W, L) as in klein (RESEARCH.md section 3): image latent ids
+/// are `[0, h, w, 0]`, text ids are `[0, 0, 0, l]`. Throughput-neutral, but the
+/// harness should use the real assignment so nothing copied from it carries the
+/// fixture's simplified axes into Phase 4.
 fn make_rope(dev: &Device, cfg: &Cfg) -> Result<Rts> {
     let pos_img: Vec<[f32; 4]> = (0..cfg.img_seq)
         .map(|i| {
             [
+                0.0,
                 (i / cfg.img_grid) as f32,
                 (i % cfg.img_grid) as f32,
-                0.0,
                 0.0,
             ]
         })
         .collect();
     let pos_txt: Vec<[f32; 4]> = (0..cfg.txt_len)
-        .map(|i| [i as f32, 0.0, 0.0, 0.0])
+        .map(|i| [0.0, 0.0, 0.0, i as f32])
         .collect();
     // The joint stream is `cat(&[txt, img])` in `forward`, so its positions
     // must be txt-then-img too. The harness had them image-then-text since it
