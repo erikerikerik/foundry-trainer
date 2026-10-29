@@ -1,0 +1,7 @@
+# Windows MSVC: a CUDA static library pulled in through candle/cudarc is built
+# against the static C runtime (LIBCMT) while Rust links the DLL runtime
+# (MSVCRT), so every binary warned LNK4098. Nothing crosses the two runtimes;
+# excluding LIBCMT makes the mismatch explicit. If anything ever truly needed
+# LIBCMT, the link would fail with unresolved symbols rather than hide it.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/NODEFAULTLIB:libcmt"]
